@@ -1,0 +1,16 @@
+{
+  "name": "lively-teaching",
+  "version": "0.1.0",
+  "private": true,
+  "description": "小象课堂 LivelyTeaching — 一句话生成可交互 3D 实验课件",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch",
+    "serve": "npx --yes serve dist -l 5173"
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.0",
+    "three": "^0.160.0"
+  }
+}

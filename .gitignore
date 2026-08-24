@@ -1,0 +1,8 @@
+node_modules/
+dist/*.js
+.DS_Store
+*.log
+.env
+.env.local
+assets/models/*.glb
+!assets/models/.gitkeep
