@@ -6,3 +6,4 @@ dist/*.js
 .env.local
 assets/models/*.glb
 !assets/models/.gitkeep
+_to_delete/
