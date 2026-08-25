@@ -171,6 +171,8 @@ function buildStone(w) {
 export default {
   id: 'caochong-chengxiang',
   name: '曹冲称象',
+  icon: '🐘',
+  grade: '演示 · 浮力与等量代换',
   keywords: ['曹冲称象', '称象', '曹冲', '大象'],
   subject: '小学语文 / 科学',
   topic: '浮力 · 等量代换',
@@ -337,9 +339,9 @@ export default {
     function finish() {
       S.phase = 4;
       ui.setStep(4);
-      ui.showResult({
+      const again = ui.showResult({
         title: '石头的重量，就是大象的重量',
-        value: S.cargo.toLocaleString(),
+        big: S.cargo.toLocaleString(),
         unit: 'kg',
         equation: [
           {label: '船装大象时', value: '吃水线 A'},
@@ -348,6 +350,7 @@ export default {
         note: `吃水深度相同，说明船受到的浮力相同；<br>浮力相同，则两次的载重相同。<br>` +
               `大象实际体重 <b>${ELEPHANT_MASS.toLocaleString()} kg</b>，与石头总重完全一致。`,
       });
+      again.onclick = () => {ui.hideResult(); reset();};
       refresh();
     }
 

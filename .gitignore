@@ -7,3 +7,4 @@ dist/*.js
 assets/models/*.glb
 !assets/models/.gitkeep
 _to_delete/
+.claude/

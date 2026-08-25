@@ -1,6 +1,6 @@
 /**
  * stage.js — 通用 3D 舞台
- * 负责：渲染器、相机、光照、水面/地面、动画循环、GLB 加载
+ * 负责：渲染器、相机、光照、水面/地面、动画循环、镜头飞行、GLB 加载
  * 与具体学科无关，任何场景模板都复用这一层。
  */
 import * as THREE from 'three';
@@ -13,6 +13,8 @@ export function createStage(container, opts = {}) {
     cameraPos = [11, 6.4, 13],
     target = [-1.5, 0.45, 0],
     withWater = true,
+    withGround = false,
+    groundColor = 0x9fbf7a,
   } = opts;
 
   const renderer = new THREE.WebGLRenderer({antialias: true});
@@ -26,14 +28,16 @@ export function createStage(container, opts = {}) {
   scene.background = new THREE.Color(sky);
   scene.fog = new THREE.Fog(sky, 34, 82);
 
-  const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 300);
+  // 竖屏/窄窗口下要自动拉远，否则手机上画面被裁掉大半
+  const BASE_FOV = 40, BASE_ASPECT = 1.6;
+  const camera = new THREE.PerspectiveCamera(BASE_FOV, BASE_ASPECT, 0.1, 300);
   camera.position.set(...cameraPos);
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(...target);
   controls.enableDamping = true;
   controls.dampingFactor = 0.07;
-  controls.minDistance = 5;
+  controls.minDistance = 3;
   controls.maxDistance = 34;
   controls.maxPolarAngle = Math.PI * 0.495;
 
@@ -49,11 +53,11 @@ export function createStage(container, opts = {}) {
   scene.add(sun);
 
   // ---- 水面（y = 0 为水平面）----
-  let water = null, waterBase = null, waterGeo = null;
+  let waterGeo = null, waterBase = null;
   if (withWater) {
     waterGeo = new THREE.PlaneGeometry(160, 160, 90, 90);
     waterGeo.rotateX(-Math.PI / 2);
-    water = new THREE.Mesh(waterGeo, new THREE.MeshStandardMaterial({
+    const water = new THREE.Mesh(waterGeo, new THREE.MeshStandardMaterial({
       color: 0x2f7fb0, roughness: 0.18, metalness: 0.22,
       transparent: true, opacity: 0.78,
     }));
@@ -68,12 +72,38 @@ export function createStage(container, opts = {}) {
     scene.add(bed);
   }
 
+  // ---- 地面（y = 0 为地面，给不涉水的场景用）----
+  if (withGround) {
+    const g = new THREE.Mesh(new THREE.PlaneGeometry(160, 160),
+      new THREE.MeshStandardMaterial({color: groundColor, roughness: 0.98}));
+    g.rotation.x = -Math.PI / 2;
+    g.receiveShadow = true;
+    scene.add(g);
+  }
+
+  // ---- 镜头飞行（立体图形要从正视切到俯视）----
+  let fly = null;
+  function flyTo(pos, look, ms = 1100) {
+    controls.enabled = false;
+    return new Promise(res => {
+      fly = {
+        t: 0, ms, res,
+        p0: camera.position.clone(), p1: new THREE.Vector3(...pos),
+        t0: controls.target.clone(), t1: new THREE.Vector3(...look),
+      };
+    });
+  }
+
   // ---- 动画循环 ----
   const frameHooks = [];
   const onFrame = fn => frameHooks.push(fn);
   let last = performance.now();
+  let raf = 0;
+  let alive = true;
 
   function loop(now) {
+    if (!alive) return;
+    raf = requestAnimationFrame(loop);
     const dt = Math.min(48, now - last);
     last = now;
     const t = now * 0.001;
@@ -87,23 +117,59 @@ export function createStage(container, opts = {}) {
       p.needsUpdate = true;
     }
 
+    if (fly) {
+      fly.t += dt;
+      const k = Math.min(1, fly.t / fly.ms), e = ease(k);
+      camera.position.lerpVectors(fly.p0, fly.p1, e);
+      controls.target.lerpVectors(fly.t0, fly.t1, e);
+      if (k >= 1) {const done = fly.res; fly = null; controls.enabled = true; done();}
+    }
+
     for (const fn of frameHooks) fn(dt, t);
     controls.update();
     renderer.render(scene, camera);
-    requestAnimationFrame(loop);
   }
 
   function resize() {
     const w = container.clientWidth, h = container.clientHeight;
+    if (!w || !h) return;
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
+    // 保持"横向看得见多少"不变：窗口越窄，纵向 FOV 越大，等于自动退后
+    camera.fov = camera.aspect < BASE_ASPECT
+      ? THREE.MathUtils.radToDeg(2 * Math.atan(
+          Math.tan(THREE.MathUtils.degToRad(BASE_FOV) / 2) * BASE_ASPECT / camera.aspect))
+      : BASE_FOV;
     camera.updateProjectionMatrix();
   }
   addEventListener('resize', resize);
   resize();
-  requestAnimationFrame(loop);
+  raf = requestAnimationFrame(loop);
 
-  return {THREE, scene, camera, renderer, controls, water, onFrame, resize};
+  /** 切场景时必须调用，否则渲染循环和显存都会泄漏 */
+  function dispose() {
+    alive = false;
+    cancelAnimationFrame(raf);
+    removeEventListener('resize', resize);
+    frameHooks.length = 0;
+    clearTweens();
+    controls.dispose();
+    scene.traverse(o => {
+      if (!o.isMesh) return;
+      o.geometry?.dispose();
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach(m => {
+        if (!m) return;
+        for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'alphaMap']) m[k]?.dispose?.();
+        m.dispose();
+      });
+    });
+    scene.clear();
+    renderer.dispose();
+    renderer.domElement.remove();
+  }
+
+  return {THREE, scene, camera, renderer, controls, onFrame, resize, flyTo, dispose};
 }
 
 /* ---------- 补间动画 ---------- */
@@ -122,7 +188,10 @@ export function stepTweens(dt) {
     if (k >= 1) {tweens.splice(i, 1); tw.res();}
   }
 }
-export function clearTweens() {tweens.length = 0;}
+export function clearTweens() {
+  // resolve 掉在途的 tween，否则 await 它的场景逻辑会永远挂住
+  while (tweens.length) tweens.pop().res();
+}
 
 /* ---------- GLB 加载：自动归一化尺寸与落地高度 ---------- */
 export function loadGLB(url, {length = 3, THREE: T} = {}) {
