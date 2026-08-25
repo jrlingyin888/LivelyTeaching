@@ -63,13 +63,16 @@ canvas{display:block;width:100%;height:100%}
   align-items:center;gap:9px;padding:0 12px 18px;pointer-events:none}
 .dock > *{pointer-events:auto;max-width:100%}
 
-#tally{display:flex;flex-direction:row;flex-wrap:wrap;justify-content:center;gap:8px}
+#tally{display:flex;flex-direction:row;flex-wrap:wrap;justify-content:center;gap:8px;
+  pointer-events:none}   /* 只读展示，不能挡住 3D 上的点击 */
 #tally:empty{display:none}
 .trow{display:flex;align-items:center;gap:11px;background:var(--panel);backdrop-filter:blur(10px);
   border-radius:13px;padding:10px 15px;box-shadow:0 5px 20px rgba(20,38,63,.14)}
-.tl{font-size:16px;font-weight:600;color:var(--navy);min-width:3.6em}
-.tc{font-size:19px;letter-spacing:2px;color:var(--warm);word-break:break-all;max-width:9em}
-.tn{font-size:21px;font-weight:800;color:var(--navy);margin-left:auto;min-width:1.3em;text-align:right}
+.tl{font-size:16px;font-weight:600;color:var(--navy);min-width:3.6em;flex:none}
+/* 图标必须排成一行，窄屏上挤成竖排就没法一眼数出来了 */
+.tc{font-size:19px;letter-spacing:2px;color:var(--warm);flex:1;white-space:nowrap;overflow:hidden}
+.tn{font-size:21px;font-weight:800;color:var(--navy);margin-left:auto;min-width:1.3em;
+  text-align:right;flex:none}
 
 /* ---------- 步骤（小圆点，给陪读的大人定位用）---------- */
 .steps{display:flex;gap:6px;background:var(--panel);backdrop-filter:blur(10px);
@@ -173,7 +176,8 @@ button.b.dim{opacity:.42}
 
 /* ---------- 桌面：数据条挪到左上角，把底部让给按钮 ---------- */
 @media(min-width:861px){
-  #tally{position:fixed;top:78px;left:16px;flex-direction:column;align-items:flex-start;
+  /* 大字提示是居中的，宽度会盖到左上角，所以 tally 压到它下面 */
+  #tally{position:fixed;top:186px;left:16px;flex-direction:column;align-items:flex-start;
     max-width:300px}
   .hud{position:fixed;top:78px;right:16px;width:268px;z-index:5}
 }
@@ -192,6 +196,7 @@ button.b.dim{opacity:.42}
 }
 @media(max-width:520px){
   .brand span{display:none}
+  .trow{flex-basis:100%}          /* 一行一条，图标才排得开 */
   /* 步骤条放不下四个词，只留圆点，当前那一步才显示文字 */
   .step{padding:6px 7px;font-size:0;gap:0}
   .step.active{padding:6px 12px;font-size:13px;gap:6px}

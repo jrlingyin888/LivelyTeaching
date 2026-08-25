@@ -146,7 +146,8 @@ export default {
     async function stepName() {
       S.step = 0; ui.setStep(0);
       ui.tally([]);
-      await ui.say(HINT_NAME);
+      // 指令不 await：孩子在念完之前就该能点
+      ui.say(HINT_NAME);
       pickHandler = async m => {
         if (S.busy) return;
         S.busy = true;

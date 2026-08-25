@@ -64,7 +64,24 @@ for (const s of SCENES) {
   }
 }
 
-/* ---------- 规则 5：学科不变量 ---------- */
+/* ---------- 规则 5：声明了几步，就得有几步真的走到 ---------- */
+/*
+ * 「排一排」这个 bug 就是这么来的：步骤条上有这一步，
+ * 但流程里没有对应的 setStep，或者进去了什么也不做。
+ * 前一半机器能判，后一半判不了 —— 但前一半已经能拦住最常见的那种。
+ */
+for (const s of SCENES) {
+  const src = readFileSync(new URL(`./src/scenes/${s.id}.js`, import.meta.url), 'utf8');
+  const hit = new Set([...src.matchAll(/ui\.setStep\((\d+)\)/g)].map(m => Number(m[1])));
+  for (let i = 0; i < (s.steps?.length || 0); i++) {
+    if (!hit.has(i)) fail(s.id, `第 ${i + 1} 步「${s.steps[i]}」在步骤条上有，但流程里没有 setStep(${i})`);
+  }
+  for (const i of hit) {
+    if (i >= (s.steps?.length || 0)) fail(s.id, `setStep(${i}) 超出了 steps 声明的范围`);
+  }
+}
+
+/* ---------- 规则 6：学科不变量 ---------- */
 /* 天平：物体质量必须是方块单位的整数倍，否则一年级会量出「五块多一点」 */
 {
   const src = readFileSync(new URL('./src/scenes/balance-scale.js', import.meta.url), 'utf8');
@@ -76,7 +93,7 @@ for (const s of SCENES) {
     if (g % unit !== 0) fail('balance-scale', `${name} ${g}g 不是 ${unit}g 的整数倍，量不出整块数`);
   }
 }
-/* 立体图形：会滚的转动惯量系数必须为正，方块必须标成不会滚 */
+/* 立体图形：转动惯量系数写法必须合法，方块必须标成不会滚 */
 {
   const src = readFileSync(new URL('./src/scenes/solid-shapes.js', import.meta.url), 'utf8');
   const rows = [...src.matchAll(/name: '([^']+)',\s*icon: '[^']*',\s*color: 0x[0-9a-f]+, k: ([^,]+),/g)];

@@ -275,6 +275,7 @@ export default {
         if (k > 0.55 && !S.aboard) {S.aboard = true; S.cargo = ELEPHANT_MASS; refresh();}
       });
       S.phase = 1;
+      ui.setStep(1);            // 「刻下吃水线」这一步要亮起来，不能从第 1 步直接跳到第 3 步
       await wait(900);
       mark.position.y = draftOf(total());
       mark.visible = true;

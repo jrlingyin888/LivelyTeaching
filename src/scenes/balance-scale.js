@@ -24,18 +24,24 @@ import { tween, ease, wait } from '../core/stage.js';
 const ARM = 1.6;            // 半臂长 m
 const BEAM_MD = 0.342;      // 横梁 M·d（kg·m），决定同样偏差倾多少
 const MAX_TILT = 0.38;      // 物理限位 ≈ 22°
-const UNIT = 30;            // 小方块 30 g
+const UNIT = 50;            // 小方块 50 g
 const PIVOT = new THREE.Vector3(0, 2.45, 0);
 
 const tiltOf = (mL, mR) =>
   Math.max(-MAX_TILT, Math.min(MAX_TILT, Math.atan((mL - mR) / 1000 * ARM / BEAM_MD)));
 
-/** 体积和质量故意不成正比 —— 大球又大又轻，石头又小又重 */
+/**
+ * 体积和质量故意反着来：气球最大最轻，石头最小最重。
+ * 最后排序的三个就是 气球 / 苹果 / 石头 —— 视觉大小顺序和轻重顺序完全相反，
+ * 孩子只能靠量出来的方块数排，靠眼睛一定排错。这是这一课的落点。
+ *
+ * 块数（÷50g）：气球 2 · 苹果 3 · 石头 5 —— 量三个共 10 下，给排序留出注意力。
+ */
 const ITEMS = [
   {key: 'apple',  name: '苹果',   g: 150, icon: '🍎', color: 0xd8453d, r: 0.42},
-  {key: 'block',  name: '小积木', g: 60,  icon: '🧱', color: 0xe8912f, r: 0.30},
-  {key: 'bigball',name: '大气球', g: 90,  icon: '🎈', color: 0x59b0d8, r: 0.6},
-  {key: 'stone',  name: '小石头', g: 210, icon: '🪨', color: 0x6b6f76, r: 0.34},
+  {key: 'block',  name: '小积木', g: 50,  icon: '🧱', color: 0xe8912f, r: 0.30},
+  {key: 'bigball',name: '大气球', g: 100, icon: '🎈', color: 0x59b0d8, r: 0.6},
+  {key: 'stone',  name: '小石头', g: 250, icon: '🪨', color: 0x6b6f76, r: 0.34},
 ];
 
 /* ===================== 建模 ===================== */
@@ -126,8 +132,10 @@ export default {
   steps: ['猜一猜', '大的一定重吗', '用方块量', '排一排'],
 
   build(ctx) {
-    const {scene, ui} = ctx;
+    const {scene, ui, flyTo, flyToFit, camera, controls} = ctx;
     const {beam} = buildStand(scene);
+
+    const HOME_CAM = [0.2, 4.0, 10.2], HOME_TGT = [0, 1.6, 0];
 
     /* ---- 两个托盘 ---- */
     const panL = buildPan(), panR = buildPan();
@@ -150,6 +158,22 @@ export default {
       c.position.copy(c.userData.home);
       scene.add(c);
       return c;
+    });
+
+    /* ---- 排一排用的三个位子：最左边最重 ---- */
+    const SLOT_Z = 3.9;
+    const slotPos = i => new THREE.Vector3(-1.6 + i * 1.6, 0, SLOT_Z);
+    const mats = [0, 1, 2].map(i => {
+      const r = 0.5 - i * 0.03;
+      const m = new THREE.Mesh(
+        new THREE.CylinderGeometry(r, r, 0.04, 28),
+        new THREE.MeshStandardMaterial({color: [0x8a6034, 0xa07a4c, 0xb69468][i], roughness: 0.95}));
+      m.position.copy(slotPos(i));
+      m.position.y = 0.025;
+      m.receiveShadow = true;
+      m.visible = false;
+      scene.add(m);
+      return m;
     });
 
     /* ---- 状态 ---- */
@@ -209,6 +233,30 @@ export default {
       }));
     }
 
+    /** 把一个物体挪到指定位置，带一个小抛物线，看起来像被拿过去 */
+    async function moveTo(m, to, ms = 640) {
+      const from = m.position.clone();
+      await tween(ms, k => {
+        const e = ease(k);
+        m.position.lerpVectors(from, to, e);
+        m.position.y += Math.sin(e * Math.PI) * 0.9;
+      });
+      m.position.copy(to);
+    }
+
+    /* ---- 点 3D 物体（排一排要用）---- */
+    const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
+    let pickHandler = null;
+    ctx.renderer.domElement.addEventListener('pointerdown', e => {
+      if (!pickHandler) return;
+      const r = ctx.renderer.domElement.getBoundingClientRect();
+      ptr.set((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      ray.setFromCamera(ptr, camera);
+      const targets = items.flatMap(m => m.userData.hitProxy ? [m, m.userData.hitProxy] : [m]);
+      const hit = ray.intersectObjects(targets, false)[0];
+      if (hit) pickHandler(hit.object.userData.proxyFor || hit.object);
+    });
+
     const settle = () => new Promise(res => {
       const t0 = Date.now();
       const iv = setInterval(() => {
@@ -260,7 +308,7 @@ export default {
     }
 
     /* ================= 第 3 步：用方块量 ================= */
-    const MEASURE = ['apple', 'stone'];
+    const MEASURE = ['apple', 'bigball', 'stone'];
     let mi = 0;
     // 常驻指令：孩子一块块加的时候，屏幕上得一直有话说
     const measureHint = () => `${byKey(MEASURE[mi]).userData.name}要几块才平呢？一块一块加加看`;
@@ -334,28 +382,108 @@ export default {
       }
     }
 
-    /* ================= 第 4 步：排一排（结论）================= */
+    /* ================= 第 4 步：排一排（真的让孩子排）================= */
+    /*
+     * 这三个的视觉大小顺序（气球 > 苹果 > 石头）和轻重顺序（石头 > 苹果 > 气球）
+     * 完全相反。孩子只能照着刚量出来的方块数排，靠眼睛一定排错 ——
+     * 这就是「用一样的东西去量」这件事的价值所在。
+     */
+    const RANK = ['①', '②', '③'];
+
     async function stepSort() {
       S.step = 3; ui.setStep(3);
       ui.setActions([]);
       await clearPans();
-      const apple = byKey('apple'), stone = byKey('stone');
-      const a = apple.userData.blocks, s = stone.userData.blocks;
 
-      ui.tally([
-        {label: '苹果', count: a, icon: '🟨'},
-        {label: '石头', count: s, icon: '🟨'},
-      ]);
-      await ui.say('看方块的数量，一下就比出来了', {hold: 3000});
-      await wait(500);
+      const cards = MEASURE.map(byKey);
+      const placed = [];
+
+      const refresh = () => ui.tally(cards.map(m => {
+        const at = placed.indexOf(m);
+        return {
+          label: (at >= 0 ? RANK[at] : '') + m.userData.name,
+          count: m.userData.blocks,
+          icon: '🟨',
+        };
+      }));
+
+      // 把不参与排序的东西收走，桌面上只留要排的三个
+      const aside = [...items.filter(m => !cards.includes(m)), ...cubes];
+      aside.forEach(m => m.visible = false);
+
+      // 判定球：比物体本身大一圈的透明球，专门用来接小手指的偏差
+      cards.forEach(m => {
+        if (m.userData.hitProxy) return;
+        const p = new THREE.Mesh(
+          new THREE.SphereGeometry(Math.max(m.userData.r * 2.1, 0.62), 12, 8),
+          new THREE.MeshBasicMaterial({visible: false}));
+        p.userData.proxyFor = m;
+        m.add(p);
+        m.userData.hitProxy = p;
+      });
+
+      // 候选摆成一排，镜头拉近到桌面
+      await Promise.all(cards.map((m, i) =>
+        moveTo(m, new THREE.Vector3(-1.3 + i * 1.3, m.userData.r + 0.35, 1.2))));
+      mats.forEach(m => m.visible = true);
+      // 排序时镜头压到桌面上，距离按视口现算：
+      // 手机上物体要够大（点得准），电脑上又不能把垫子裁掉
+      await flyToFit([0, 0.7, 2.5], 2.75, [0, 0.62, 1], 1100);
+      refresh();
+
+      // 指令不 await：孩子在念完之前就该能点，否则会以为坏了
+      ui.say('最重的放最左边。看方块的数量，从最重的开始点');
+
+      let moving = false;
+      await new Promise(done => {
+        pickHandler = async m => {
+          // 只在物体飞行的那几百毫秒里锁；旁白不挡操作
+          if (moving || !cards.includes(m) || placed.includes(m)) return;
+          const rest = cards.filter(x => !placed.includes(x));
+          const heaviest = rest.reduce((a, b) => b.userData.g > a.userData.g ? b : a);
+
+          if (m !== heaviest) {
+            ui.judge(false, '方块多的那个更重');
+            return;
+          }
+
+          moving = true;
+          const i = placed.length;
+          placed.push(m);
+          const to = slotPos(i);
+          to.y = m.userData.r + 0.05;
+          await moveTo(m, to);
+          refresh();
+          moving = false;
+
+          if (placed.length < cards.length) {
+            ui.judge(true, `${m.userData.name} ${m.userData.blocks} 块，是剩下里最重的`);
+          } else {
+            pickHandler = null;
+            await ui.judge(true, '全部排好啦');
+            done();
+          }
+        };
+      });
+
+      await wait(700);
+      finishSort(placed);
+    }
+
+    function finishSort(placed) {
+      const line = placed
+        .map((m, i) => `${RANK[i]} ${m.userData.name} <b>${m.userData.blocks}</b> 块`)
+        .join('　→　');
 
       const again = ui.showResult({
         icon: '⚖️',
-        title: '用一样的东西去量，就能比出轻重',
-        note: `苹果是 <b>${a}</b> 块，石头是 <b>${s}</b> 块，<br>` +
-              `${s > a ? '石头' : '苹果'}更重。`,
-        grown: '这一步是「统一单位」的雏形。可以追问：如果一个人用积木量、' +
-               '另一个人用石头量，还能比吗？（不能——必须用同一样东西）' +
+        title: '用一样的东西去量，就能排出轻重',
+        note: `${line}<br><br>` +
+              `最大的<b>气球</b>反而最轻，最小的<b>石头</b>反而最重——<br>` +
+              `看大小猜不准，数方块才准。`,
+        grown: '这一步是「统一单位」的雏形，也是测量的起点。可以追问两个问题：' +
+               '① 如果一个人用积木量、另一个人用石头量，还能比吗？（不能——必须用同一样东西）' +
+               '② 石头明明最小，为什么最重？（引出"重不重要看里面塞得紧不紧"，就是密度的种子）' +
                '往后这就是曹冲称象里「等量代换」的底子。',
       });
       again.onclick = () => {ui.hideResult(); reset();};
@@ -364,6 +492,12 @@ export default {
     /* ================= 重置 ================= */
     async function reset() {
       S.busy = false;
+      pickHandler = null;
+      mats.forEach(m => m.visible = false);
+      items.forEach(m => m.visible = true);
+      cubes.forEach(c => c.visible = true);
+      camera.position.set(...HOME_CAM);
+      controls.target.set(...HOME_TGT);
       await clearPans();
       items.forEach(m => {m.position.copy(m.userData.home); m.userData.blocks = 0;});
       cubes.forEach(c => c.position.copy(c.userData.home));

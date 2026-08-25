@@ -94,6 +94,20 @@ export function createStage(container, opts = {}) {
     });
   }
 
+  /**
+   * 飞到「刚好装得下以 center 为心、radius 为半径的那个球」的位置。
+   * 固定写死镜头距离在横屏和竖屏之间必然顾此失彼：手机上物体太小点不准，
+   * 电脑上又会把上下裁掉。这里按当前视口的 fov / aspect 现算距离。
+   * @param dir 观察方向的偏移（会被归一化），默认略微俯视
+   */
+  function flyToFit(center, radius, dir = [0, 0.55, 1], ms = 1100) {
+    const fovY = THREE.MathUtils.degToRad(camera.fov);
+    const fovX = 2 * Math.atan(Math.tan(fovY / 2) * camera.aspect);
+    const d = radius / Math.sin(Math.min(fovY, fovX) / 2);
+    const off = new THREE.Vector3(...dir).normalize().multiplyScalar(d);
+    return flyTo(new THREE.Vector3(...center).add(off).toArray(), center, ms);
+  }
+
   // ---- 动画循环 ----
   const frameHooks = [];
   const onFrame = fn => frameHooks.push(fn);
@@ -169,7 +183,7 @@ export function createStage(container, opts = {}) {
     renderer.domElement.remove();
   }
 
-  return {THREE, scene, camera, renderer, controls, onFrame, resize, flyTo, dispose};
+  return {THREE, scene, camera, renderer, controls, onFrame, resize, flyTo, flyToFit, dispose};
 }
 
 /* ---------- 补间动画 ---------- */

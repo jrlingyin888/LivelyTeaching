@@ -52,6 +52,7 @@ function launch(meta) {
     controls: stage.controls,
     onFrame: stage.onFrame,
     flyTo: stage.flyTo,
+    flyToFit: stage.flyToFit,
     ui: scopedUI(alive),
   });
 
