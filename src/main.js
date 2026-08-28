@@ -4,6 +4,7 @@
  */
 import { createStage, stepTweens } from './core/stage.js';
 import { createUI } from './core/ui.js';
+import { createFlowRunner } from './core/flow.js';
 import { SCENES } from './scenes/index.js';
 
 const ui = createUI();
@@ -44,7 +45,8 @@ function launch(meta) {
   stage = createStage(host, meta.stage);
   stage.onFrame(dt => stepTweens(dt));
 
-  ui.mount(meta);
+  // 步骤条从编排派生：meta 里再写一份必然会不同步（曹冲称象就漏过一步）
+  ui.mount(meta.flow ? {...meta, steps: meta.flow.steps.map(s => s.name)} : meta);
   const inst = meta.build.call(meta, {
     scene: stage.scene,
     camera: stage.camera,
@@ -56,7 +58,25 @@ function launch(meta) {
     ui: scopedUI(alive),
   });
 
-  // 场景自己在流程里挂按钮的，就不要在这里覆盖掉
+  // 声明了 flow 的场景：编排交给解释器跑，内核只提供动作
+  if (meta.flow) {
+    let runner = null;
+    const start = () => {
+      runner?.stop();
+      inst.reset?.();
+      runner = createFlowRunner({
+        ui: scopedUI(alive),
+        actions: inst.actions,
+        flow: meta.flow,
+        onDone: start,          // 结论卡上的「再玩一次」
+      });
+      runner.run().catch(e => {if (alive()) console.error('[flow]', e);});
+    };
+    start();
+    return;
+  }
+
+  // 老写法：场景自己驱动流程，actions 是一排按钮
   if (inst?.actions?.length) ui.setActions(inst.actions);
 }
 

@@ -115,8 +115,15 @@ function buildStand(scene) {
 
   return {beam};
 }
-
-/* ===================== 场景模板导出 ===================== */
+/* ===================== 场景模板导出 =====================
+ *
+ * 这个场景切成了两半：
+ *   flow  —— 教学编排，声明式，可以由 AI 生成、可以被 check 校验
+ *   build —— 内核，手写：建模、物理、以及交互循环（反复加方块、点着排序）
+ *
+ * 交互循环归内核，不进 DSL —— 否则 DSL 会长成一门编程语言，
+ * 生成不可控，也验不了。
+ */
 export default {
   id: 'balance-scale',
   name: '谁轻谁重',
@@ -129,19 +136,67 @@ export default {
   stage: {cameraPos: [0.2, 4.0, 10.2], target: [0, 1.6, 0], withWater: false,
           withGround: true, groundColor: 0xd6cdb8, sky: 0xe4eef5},
 
-  steps: ['猜一猜', '大的一定重吗', '用方块量', '排一排'],
+  /* ---------- 教学编排 ---------- */
+  flow: {
+    steps: [
+      {name: '猜一猜', do: [
+        {say: '这是一台天平。哪边沉下去，哪边就更重', hold: 3400},
+        {ask: '苹果和小积木，你猜哪个重？', as: 'g1', options: [
+          {label: '苹果', icon: '🍎', value: 'apple'},
+          {label: '小积木', icon: '🧱', value: 'block'},
+        ]},
+        {act: 'weigh', args: {a: 'apple', b: 'block'}, as: 'heavier1'},
+        {judge: {expect: 'heavier1', against: 'g1'}, hint: '苹果那边沉下去了，苹果更重'},
+        {wait: 1200},
+      ]},
 
+      {name: '大的一定重吗', do: [
+        {say: '再看这两个：一个大气球，一个小石头', hold: 3200},
+        {ask: '这次呢？哪个重？', as: 'g2', options: [
+          {label: '大气球', icon: '🎈', value: 'bigball'},
+          {label: '小石头', icon: '🪨', value: 'stone'},
+        ]},
+        {act: 'weigh', args: {a: 'bigball', b: 'stone'}, as: 'heavier2'},
+        {judge: {expect: 'heavier2', against: 'g2'}, hint: '小石头沉下去了'},
+        {wait: 700},
+        {say: '原来大的不一定重，小的不一定轻', hold: 3600},
+        {wait: 1600},
+      ]},
+
+      {name: '用方块量', do: [
+        {say: '现在我们用一样的小方块，量一量每个东西有多重', hold: 4000},
+        {act: 'measureAll', args: {items: ['apple', 'bigball', 'stone']}},
+      ]},
+
+      {name: '排一排', do: [
+        {act: 'sortByWeight', args: {items: ['apple', 'bigball', 'stone']}, as: 'order'},
+        {wait: 700},
+      ]},
+    ],
+
+    result: {
+      icon: '⚖️',
+      title: '用一样的东西去量，就能排出轻重',
+      note: '{{order}}<br><br>' +
+            '最大的<b>气球</b>反而最轻，最小的<b>石头</b>反而最重——<br>' +
+            '看大小猜不准，数方块才准。',
+      grown: '这一步是「统一单位」的雏形，也是测量的起点。可以追问两个问题：' +
+             '① 如果一个人用积木量、另一个人用石头量，还能比吗？（不能——必须用同一样东西）' +
+             '② 石头明明最小，为什么最重？（引出"重不重要看里面塞得紧不紧"，就是密度的种子）' +
+             '往后这就是曹冲称象里「等量代换」的底子。',
+    },
+  },
+
+  /* ---------- 内核 ---------- */
   build(ctx) {
-    const {scene, ui, flyTo, flyToFit, camera, controls} = ctx;
+    const {scene, ui, flyToFit, camera, controls} = ctx;
     const {beam} = buildStand(scene);
 
     const HOME_CAM = [0.2, 4.0, 10.2], HOME_TGT = [0, 1.6, 0];
 
-    /* ---- 两个托盘 ---- */
     const panL = buildPan(), panR = buildPan();
     scene.add(panL, panR);
 
-    /* ---- 待称物体摆在台面上 ---- */
     const items = ITEMS.map((it, i) => {
       const m = buildItem(it);
       m.userData.home = new THREE.Vector3(-3.0 + i * 1.1, 0.35 + it.r, 3.6);
@@ -151,7 +206,6 @@ export default {
     });
     const byKey = k => items.find(m => m.userData.key === k);
 
-    /* ---- 小方块堆 ---- */
     const cubes = Array.from({length: 10}, (_, i) => {
       const c = buildCube();
       c.userData.home = new THREE.Vector3(1.9 + (i % 5) * 0.42, 0.52 + ((i / 5) | 0) * 0.38, 3.6);
@@ -160,7 +214,7 @@ export default {
       return c;
     });
 
-    /* ---- 排一排用的三个位子：最左边最重 ---- */
+    /* ---- 排一排的三个位子：最左边最重 ---- */
     const SLOT_Z = 3.9;
     const slotPos = i => new THREE.Vector3(-1.6 + i * 1.6, 0, SLOT_Z);
     const mats = [0, 1, 2].map(i => {
@@ -176,8 +230,8 @@ export default {
       return m;
     });
 
-    /* ---- 状态 ---- */
-    const S = {left: [], right: [], tilt: 0, busy: false, step: 0};
+    /* ---- 状态与物理 ---- */
+    const S = {left: [], right: [], tilt: 0, busy: false};
     const massOf = list => list.reduce((a, m) => a + m.userData.g, 0);
     const targetTilt = () => tiltOf(massOf(S.left), massOf(S.right));
 
@@ -205,7 +259,7 @@ export default {
       layout();
     });
 
-    /* ---- 放上 / 拿下 ---- */
+    /* ---- 搬运 ---- */
     async function place(m, side) {
       const list = side === 'L' ? S.left : S.right;
       const from = m.position.clone();
@@ -219,21 +273,23 @@ export default {
       });
       list.push(m);
     }
+
+    async function homeward(m, ms = 520) {
+      const from = m.position.clone();
+      await tween(ms, k => {
+        const e = ease(k);
+        m.position.lerpVectors(from, m.userData.home, e);
+        m.position.y += Math.sin(e * Math.PI) * 0.9;
+      });
+      m.position.copy(m.userData.home);
+    }
+
     async function clearPans() {
       const all = [...S.left, ...S.right];
       S.left = []; S.right = [];
-      await Promise.all(all.map(async m => {
-        const from = m.position.clone();
-        await tween(520, k => {
-          const e = ease(k);
-          m.position.lerpVectors(from, m.userData.home, e);
-          m.position.y += Math.sin(e * Math.PI) * 0.9;
-        });
-        m.position.copy(m.userData.home);
-      }));
+      await Promise.all(all.map(m => homeward(m)));
     }
 
-    /** 把一个物体挪到指定位置，带一个小抛物线，看起来像被拿过去 */
     async function moveTo(m, to, ms = 640) {
       const from = m.position.clone();
       await tween(ms, k => {
@@ -244,7 +300,16 @@ export default {
       m.position.copy(to);
     }
 
-    /* ---- 点 3D 物体（排一排要用）---- */
+    const settle = () => new Promise(res => {
+      const t0 = Date.now();
+      const iv = setInterval(() => {
+        if (Math.abs(targetTilt() - S.tilt) < 0.006 || Date.now() - t0 > 3000) {
+          clearInterval(iv); res();
+        }
+      }, 80);
+    });
+
+    /* ---- 点 3D 物体 ---- */
     const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
     let pickHandler = null;
     ctx.renderer.domElement.addEventListener('pointerdown', e => {
@@ -257,161 +322,97 @@ export default {
       if (hit) pickHandler(hit.object.userData.proxyFor || hit.object);
     });
 
-    const settle = () => new Promise(res => {
-      const t0 = Date.now();
-      const iv = setInterval(() => {
-        if (Math.abs(targetTilt() - S.tilt) < 0.006 || Date.now() - t0 > 3000) {
-          clearInterval(iv); res();
-        }
-      }, 80);
-    });
+    /* ===================== 编排能调的动作 ===================== */
 
-    /* ================= 第 1 步：猜一猜 ================= */
-    async function stepGuess() {
-      S.step = 0; ui.setStep(0);
-      ui.setActions([]); ui.tally([]);
+    /** 称一称：把 a、b 放上天平，返回真正更重的那个的 key（不是写死的答案）*/
+    async function weigh({a, b}) {
       await clearPans();
-      const apple = byKey('apple'), block = byKey('block');
-
-      await ui.say('这是一台天平。哪边沉下去，哪边就更重', {hold: 3400});
-      const a = await ui.ask('苹果和小积木，你猜哪个重？', [
-        {label: '苹果', icon: '🍎'},
-        {label: '小积木', icon: '🧱'},
-      ]);
-      await Promise.all([place(apple, 'L'), place(block, 'R')]);
+      const A = byKey(a), B = byKey(b);
+      await Promise.all([place(A, 'L'), place(B, 'R')]);
       await settle();
       await wait(500);
-      await ui.judge(a.index === 0, '苹果那边沉下去了，苹果更重');
-      await wait(1200);
-      stepBig();
+      return A.userData.g >= B.userData.g ? a : b;
     }
 
-    /* ============ 第 2 步：大的一定重吗（撞前概念）============ */
-    async function stepBig() {
-      S.step = 1; ui.setStep(1);
-      await clearPans();
-      const ball = byKey('bigball'), stone = byKey('stone');
+    /** 用小方块量：一个接一个，孩子自己加到平为止。返回量出来的块数 */
+    async function measureAll({items: keys}) {
+      const out = {};
+      for (const k of keys) {
+        await clearPans();
+        const it = byKey(k);
+        await place(it, 'L');
+        await settle();
+        ui.tally([{label: it.userData.name, count: 0, icon: '🟨'}]);
+        const hint = () => `${it.userData.name}要几块才平呢？一块一块加加看`;
+        ui.say(hint());
 
-      await ui.say('再看这两个：一个大气球，一个小石头', {hold: 3200});
-      const a = await ui.ask('这次呢？哪个重？', [
-        {label: '大气球', icon: '🎈'},
-        {label: '小石头', icon: '🪨'},
-      ]);
-      await Promise.all([place(ball, 'L'), place(stone, 'R')]);
-      await settle();
-      await wait(600);
-      await ui.judge(a.index === 1, '小石头沉下去了');
-      await wait(700);
-      await ui.say('原来大的不一定重，小的不一定轻', {hold: 3600});
-      await wait(1600);
-      stepMeasure();
-    }
+        await new Promise(done => {
+          const refresh = async () => {
+            const n = S.right.length;
+            it.userData.blocks = n;
+            ui.tally([{label: it.userData.name, count: n, icon: '🟨'}]);
+            const dm = massOf(S.left) - massOf(S.right);
+            if (dm === 0) {
+              ui.setActions([]);
+              await ui.judge(true, `${it.userData.name}正好等于 ${n} 块`);
+              await wait(1200);
+              done();
+            } else if (dm < 0) {
+              await ui.say('加多啦，天平往方块那边倒了');
+              await wait(600);
+              ui.say(hint());
+            }
+          };
 
-    /* ================= 第 3 步：用方块量 ================= */
-    const MEASURE = ['apple', 'bigball', 'stone'];
-    let mi = 0;
-    // 常驻指令：孩子一块块加的时候，屏幕上得一直有话说
-    const measureHint = () => `${byKey(MEASURE[mi]).userData.name}要几块才平呢？一块一块加加看`;
-
-    async function stepMeasure() {
-      S.step = 2; ui.setStep(2);
-      await clearPans();
-      mi = 0;
-      await ui.say('现在我们用一样的小方块，量一量每个东西有多重', {hold: 4000});
-      measureOne();
-    }
-
-    async function measureOne() {
-      await clearPans();
-      const it = byKey(MEASURE[mi]);
-      await place(it, 'L');
-      await settle();
-      ui.tally([{label: it.userData.name, count: 0, icon: '🟨'}]);
-      await ui.say(measureHint());
-      ui.setActions([
-        {label: '加一块', primary: true, run: addCube},
-        {label: '拿掉一块', ghost: true, run: popCube},
-      ]);
-    }
-
-    async function addCube() {
-      if (S.busy) return;
-      const c = cubes.find(x => !S.right.includes(x));
-      if (!c) {ui.say('方块用完啦', {hold: 1800}); return;}
-      S.busy = true;
-      await place(c, 'R');
-      await settle();
-      afterChange();
-      S.busy = false;
-    }
-
-    async function popCube() {
-      if (S.busy || !S.right.length) return;
-      S.busy = true;
-      const c = S.right.pop();
-      const from = c.position.clone();
-      await tween(480, k => {
-        const e = ease(k);
-        c.position.lerpVectors(from, c.userData.home, e);
-        c.position.y += Math.sin(e * Math.PI) * 0.9;
-      });
-      c.position.copy(c.userData.home);
-      await settle();
-      afterChange();
-      S.busy = false;
-    }
-
-    async function afterChange() {
-      const it = byKey(MEASURE[mi]);
-      const n = S.right.length;
-      const dm = massOf(S.left) - massOf(S.right);
-      it.userData.blocks = n;
-      ui.tally([{label: it.userData.name, count: n, icon: '🟨'}]);
-
-      if (dm === 0) {
-        ui.setActions([]);
-        await ui.judge(true, `${it.userData.name}正好等于 ${n} 块`);
-        await wait(1500);
-        mi++;
-        if (mi < MEASURE.length) measureOne();
-        else stepSort();
-      } else if (dm < 0) {
-        await ui.say('加多啦，天平往方块那边倒了');
-        await wait(600);
-        ui.say(measureHint(), {mute: true});
+          ui.setActions([
+            {label: '加一块', primary: true, run: async () => {
+              if (S.busy) return;
+              const c = cubes.find(x => !S.right.includes(x));
+              if (!c) {ui.say('方块用完啦', {hold: 1800}); return;}
+              S.busy = true;
+              await place(c, 'R'); await settle();
+              await refresh();
+              S.busy = false;
+            }},
+            {label: '拿掉一块', ghost: true, run: async () => {
+              if (S.busy || !S.right.length) return;
+              S.busy = true;
+              await homeward(S.right.pop(), 480);
+              await settle();
+              await refresh();
+              S.busy = false;
+            }},
+          ]);
+        });
+        out[k] = it.userData.blocks;
       }
+      ui.setActions([]);
+      return out;
     }
 
-    /* ================= 第 4 步：排一排（真的让孩子排）================= */
-    /*
-     * 这三个的视觉大小顺序（气球 > 苹果 > 石头）和轻重顺序（石头 > 苹果 > 气球）
-     * 完全相反。孩子只能照着刚量出来的方块数排，靠眼睛一定排错 ——
-     * 这就是「用一样的东西去量」这件事的价值所在。
+    /**
+     * 排一排：孩子点着把物体从重到轻摆好。
+     * 这三个的视觉大小顺序和轻重顺序完全相反，靠眼睛一定排错，
+     * 只能照刚量出来的方块数排 —— 这才是「用同一样东西去量」的价值。
+     * 返回一行排好的文字，给结论卡用。
      */
     const RANK = ['①', '②', '③'];
 
-    async function stepSort() {
-      S.step = 3; ui.setStep(3);
-      ui.setActions([]);
+    async function sortByWeight({items: keys}) {
       await clearPans();
-
-      const cards = MEASURE.map(byKey);
+      const cards = keys.map(byKey);
       const placed = [];
 
       const refresh = () => ui.tally(cards.map(m => {
         const at = placed.indexOf(m);
-        return {
-          label: (at >= 0 ? RANK[at] : '') + m.userData.name,
-          count: m.userData.blocks,
-          icon: '🟨',
-        };
+        return {label: (at >= 0 ? RANK[at] : '') + m.userData.name,
+                count: m.userData.blocks, icon: '🟨'};
       }));
 
-      // 把不参与排序的东西收走，桌面上只留要排的三个
-      const aside = [...items.filter(m => !cards.includes(m)), ...cubes];
-      aside.forEach(m => m.visible = false);
+      // 桌面上只留要排的三个
+      [...items.filter(m => !cards.includes(m)), ...cubes].forEach(m => m.visible = false);
 
-      // 判定球：比物体本身大一圈的透明球，专门用来接小手指的偏差
+      // 判定球：比物体大一圈的透明球，接小手指的偏差
       cards.forEach(m => {
         if (m.userData.hitProxy) return;
         const p = new THREE.Mesh(
@@ -422,12 +423,10 @@ export default {
         m.userData.hitProxy = p;
       });
 
-      // 候选摆成一排，镜头拉近到桌面
       await Promise.all(cards.map((m, i) =>
         moveTo(m, new THREE.Vector3(-1.3 + i * 1.3, m.userData.r + 0.35, 1.2))));
       mats.forEach(m => m.visible = true);
-      // 排序时镜头压到桌面上，距离按视口现算：
-      // 手机上物体要够大（点得准），电脑上又不能把垫子裁掉
+      // 镜头距离按视口现算：手机上物体要够大，电脑上又不能把垫子裁掉
       await flyToFit([0, 0.7, 2.5], 2.75, [0, 0.62, 1], 1100);
       refresh();
 
@@ -441,16 +440,11 @@ export default {
           if (moving || !cards.includes(m) || placed.includes(m)) return;
           const rest = cards.filter(x => !placed.includes(x));
           const heaviest = rest.reduce((a, b) => b.userData.g > a.userData.g ? b : a);
-
-          if (m !== heaviest) {
-            ui.judge(false, '方块多的那个更重');
-            return;
-          }
+          if (m !== heaviest) {ui.judge(false, '方块多的那个更重'); return;}
 
           moving = true;
-          const i = placed.length;
           placed.push(m);
-          const to = slotPos(i);
+          const to = slotPos(placed.length - 1);
           to.y = m.userData.r + 0.05;
           await moveTo(m, to);
           refresh();
@@ -466,47 +460,28 @@ export default {
         };
       });
 
-      await wait(700);
-      finishSort(placed);
-    }
-
-    function finishSort(placed) {
-      const line = placed
+      return placed
         .map((m, i) => `${RANK[i]} ${m.userData.name} <b>${m.userData.blocks}</b> 块`)
         .join('　→　');
-
-      const again = ui.showResult({
-        icon: '⚖️',
-        title: '用一样的东西去量，就能排出轻重',
-        note: `${line}<br><br>` +
-              `最大的<b>气球</b>反而最轻，最小的<b>石头</b>反而最重——<br>` +
-              `看大小猜不准，数方块才准。`,
-        grown: '这一步是「统一单位」的雏形，也是测量的起点。可以追问两个问题：' +
-               '① 如果一个人用积木量、另一个人用石头量，还能比吗？（不能——必须用同一样东西）' +
-               '② 石头明明最小，为什么最重？（引出"重不重要看里面塞得紧不紧"，就是密度的种子）' +
-               '往后这就是曹冲称象里「等量代换」的底子。',
-      });
-      again.onclick = () => {ui.hideResult(); reset();};
     }
 
-    /* ================= 重置 ================= */
+    /* ---------- 重置 ---------- */
     async function reset() {
       S.busy = false;
       pickHandler = null;
+      S.left = []; S.right = [];
       mats.forEach(m => m.visible = false);
-      items.forEach(m => m.visible = true);
-      cubes.forEach(c => c.visible = true);
+      items.forEach(m => {m.visible = true; m.position.copy(m.userData.home); m.userData.blocks = 0;});
+      cubes.forEach(c => {c.visible = true; c.position.copy(c.userData.home);});
       camera.position.set(...HOME_CAM);
       controls.target.set(...HOME_TGT);
-      await clearPans();
-      items.forEach(m => {m.position.copy(m.userData.home); m.userData.blocks = 0;});
-      cubes.forEach(c => c.position.copy(c.userData.home));
-      ui.tally([]); ui.hideResult();
-      stepGuess();
+      ui.setActions([]); ui.tally([]); ui.hideResult();
     }
 
-    stepGuess();
+    // 这两个要等孩子自己操作，可能等很久 —— 告诉 runner 别当成卡住
+    measureAll.waitsForChild = true;
+    sortByWeight.waitsForChild = true;
 
-    return {actions: [], reset};
+    return {actions: {weigh, measureAll, sortByWeight}, reset};
   },
 };

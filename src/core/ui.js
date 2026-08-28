@@ -99,13 +99,19 @@ export function createUI() {
     }
 
     el.steps.innerHTML = '';
-    stepEls = (meta.steps || []).map((label, i) => {
+    stepEls = [];
+    addSteps(meta.steps || []);
+  }
+
+  /** 深层是点开「为什么」才展开的，一上来不能让孩子看见十几个点 */
+  function addSteps(names) {
+    for (const label of names) {
       const d = document.createElement('div');
       d.className = 'step';
       d.innerHTML = `<i></i>${typeof label === 'string' ? label : label.name}`;
       el.steps.appendChild(d);
-      return d;
-    });
+      stepEls.push(d);
+    }
   }
 
   /* ================= 操作按钮 ================= */
@@ -245,10 +251,13 @@ export function createUI() {
       ${r.note ? `<p>${r.note}</p>` : ''}
       ${r.grown ? `<p class="grown">给大人：${r.grown}</p>` : ''}
       <div class="rbtn">
-        <button class="b pri" id="btnAgain">再玩一次</button>
+        ${r.more ? `<button class="b pri" id="btnMore">${r.more.label}</button>` : ''}
+        <button class="b ${r.more ? '' : 'pri'}" id="btnAgain">再玩一次</button>
         <button class="b ghost" id="btnBackHome">换一个</button>
       </div>`;
     el.result.querySelector('#btnBackHome').onclick = backHome;
+    // 「为什么会这样？」通往深层，比「再玩一次」更该被点，所以它当主按钮
+    if (r.more) el.result.querySelector('#btnMore').onclick = () => r.more.run();
     el.result.classList.add('show');
     say(r.title + (r.note ? '。' + r.note : ''));
     return el.result.querySelector('#btnAgain');   // 场景自己绑「再玩一次」
@@ -257,7 +266,7 @@ export function createUI() {
 
   return {
     mount, setActions, focusAction,
-    say: sayBig, clearSay, ask, judge, tally, setStep,
+    say: sayBig, clearSay, ask, judge, tally, setStep, addSteps,
     setStat, setProgress, setHint, toast,
     showResult, hideResult,
     showHome, backHome,
