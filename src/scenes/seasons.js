@@ -103,71 +103,289 @@ export default {
 
   /* ---------- 教学编排（第 3 步会用生成的版本替换掉这一份）---------- */
   flow: {
-    steps: [
-      {name: '转一圈', do: [
-        {act: 'showSpace'},
-        {say: '这是太阳，这是我们住的地球', hold: 3000},
-        {act: 'orbitRun', args: {turns: 1}},
-        {ask: '地球绕着太阳跑一圈，要多久？', as: 'g1', options: [
-          {label: '一天', icon: '🌙', value: 'day'},
-          {label: '一个月', icon: '📅', value: 'month'},
-          {label: '一年', icon: '🎂', value: 'year'},
-        ]},
-        {judge: {correct: 'year', against: 'g1'}, hint: '跑完一圈，就过了一年'},
-      ]},
-
-      {name: '看四季', do: [
-        {say: '跑到不同的地方，我们这里就是不同的季节', hold: 3400},
-        {act: 'seasonTour'},
-      ]},
-
-      {name: '太阳有多高', do: [
-        {act: 'showGround', args: {lat: 40}},
-        {ask: '夏天和冬天，哪个时候中午的太阳更高？', as: 'g2', options: [
-          {label: '夏天', icon: '☀️', value: 'summer'},
-          {label: '冬天', icon: '❄️', value: 'winter'},
-        ]},
-        {act: 'compareSun', args: {a: 6, b: 12, lat: 40}, as: 'higher'},
-        {judge: {expect: 'higher', against: 'g2'}, hint: '夏天太阳高，影子就短'},
-      ]},
+    "steps": [
+      {
+        "name": "地球在转",
+        "do": [
+          {
+            "act": "showSpace"
+          },
+          {
+            "say": "中间这个大火球，是太阳。旁边这个小球，就是我们住的地球",
+            "hold": 4000
+          },
+          {
+            "act": "orbitRun",
+            "args": {
+              "turns": 1
+            }
+          },
+          {
+            "say": "地球绕着太阳跑了一整圈。跑完一圈，就是一年",
+            "hold": 3800
+          },
+          {
+            "wait": 800
+          }
+        ]
+      },
+      {
+        "name": "一年四季",
+        "do": [
+          {
+            "say": "这一圈里，我们过了春天、夏天、秋天、冬天",
+            "hold": 3600
+          },
+          {
+            "act": "seasonTour"
+          },
+          {
+            "wait": 800
+          }
+        ]
+      },
+      {
+        "name": "猜一猜",
+        "do": [
+          {
+            "say": "夏天热得要吃冰棍，冬天冷得要穿棉袄。这是为什么呢",
+            "hold": 4000
+          },
+          {
+            "ask": "你猜，哪个季节地球离太阳更近？",
+            "as": "gNear",
+            "options": [
+              {
+                "label": "夏天",
+                "icon": "☀️",
+                "value": "summer"
+              },
+              {
+                "label": "冬天",
+                "icon": "❄️",
+                "value": "winter"
+              }
+            ]
+          },
+          {
+            "act": "compareDistance",
+            "args": {
+              "a": 6,
+              "b": 12
+            },
+            "as": "nearer"
+          },
+          {
+            "judge": {
+              "expect": "nearer",
+              "against": "gNear"
+            },
+            "hint": "没关系，好多大人也这么猜。量一量才知道，冬天反而离得近一点点"
+          },
+          {
+            "say": "离得近的是冬天，可冬天最冷。看来热不热，不是看远近",
+            "hold": 4200
+          },
+          {
+            "wait": 1000
+          }
+        ]
+      },
+      {
+        "name": "太阳多高",
+        "do": [
+          {
+            "act": "showGround"
+          },
+          {
+            "say": "我们回到地面上。这里立着一根杆子，太阳一照，地上就有影子",
+            "hold": 4000
+          },
+          {
+            "ask": "哪个季节的中午，太阳在天上站得更高？",
+            "as": "gHigh",
+            "options": [
+              {
+                "label": "夏天",
+                "icon": "🌞",
+                "value": "summer"
+              },
+              {
+                "label": "冬天",
+                "icon": "🌥️",
+                "value": "winter"
+              }
+            ]
+          },
+          {
+            "act": "compareSun",
+            "args": {
+              "a": 6,
+              "b": 12
+            },
+            "as": "higher"
+          },
+          {
+            "judge": {
+              "expect": "higher",
+              "against": "gHigh"
+            },
+            "hint": "再看看影子——影子短的那天，太阳就站得高"
+          },
+          {
+            "say": "夏天的太阳高高的，影子短短的。冬天的太阳低低的，影子拖得好长",
+            "hold": 4400
+          },
+          {
+            "tally": [
+              {
+                "label": "夏天中午的影子",
+                "count": 1,
+                "icon": "⬛"
+              },
+              {
+                "label": "冬天中午的影子",
+                "count": 7,
+                "icon": "⬛"
+              }
+            ]
+          },
+          {
+            "wait": 1200
+          }
+        ]
+      },
+      {
+        "name": "光摊开了",
+        "do": [
+          {
+            "say": "太阳低低的时候，光是斜着照下来的",
+            "hold": 3400
+          },
+          {
+            "act": "energyRatio",
+            "args": {
+              "a": 6,
+              "b": 12
+            },
+            "as": "spread"
+          },
+          {
+            "say": "一样多的光，斜着照就摊得更开，每一块地分到的就变少了",
+            "hold": 4400
+          },
+          {
+            "say": "太阳站得高，地就晒得暖；站得低，地就晒不热",
+            "hold": 4200
+          },
+          {
+            "wait": 1000
+          }
+        ]
+      }
     ],
-
-    result: {
-      icon: '🌍',
-      title: '地球跑到不同的地方，就是不同的季节',
-      note: '夏天中午的太阳<b>高高的</b>，影子很短；<br>' +
-            '冬天中午的太阳<b>低低的</b>，影子拖得长长的。',
-      grown: '表层到这里就够一年级了。想往下讲，点「为什么会冷会热」。',
+    "result": {
+      "icon": "☀️",
+      "title": "太阳站得高，天气才会热",
+      "note": "{{spread}}<br><br>冬天其实<b>离太阳更近</b>，可还是最冷——<br>因为冬天中午的太阳<b>站得低</b>，光斜着照，摊得开，晒不热。",
+      "grown": "真正的原因是地轴倾斜 23.44°：太阳直射点在南北回归线之间往返，正午太阳高度 h = 90° − |纬度 − 赤纬|，单位面积获得的能量正比于 sin(h)，斜射时同一束光摊开的面积是 1/sin(h)。日地距离的影响方向相反且量级很小——北半球冬季（1 月初）恰好处在近日点。可以追问：① 如果地轴不歪，还会有四季吗？② 六月太阳最高，为什么最热的却是七八月？"
     },
-    deeperLabel: '为什么会冷会热？',
-
-    deeper: [
-      {name: '是因为近吗', do: [
-        {ask: '夏天热，是因为地球离太阳更近吗？', as: 'g3', options: [
-          {label: '是的', icon: '👍', value: 'summer'},
-          {label: '不是', icon: '🤔', value: 'winter'},
-        ]},
-        {act: 'compareDistance', args: {a: 6, b: 12}, as: 'closer'},
-        {judge: {expect: 'closer', against: 'g3'},
-         hint: '反过来了 —— 北半球夏天时，地球其实离太阳更远'},
-      ]},
-
-      {name: '真正的原因', do: [
-        {say: '真正的原因是地球是斜着的', hold: 3000},
-        {act: 'showTilt'},
-        {act: 'energyRatio', args: {a: 6, b: 12, lat: 40}, as: 'ratio'},
-      ]},
+    "deeperLabel": "太阳为什么会变高变低？",
+    "deeper": [
+      {
+        "name": "地球歪着",
+        "do": [
+          {
+            "act": "showTilt"
+          },
+          {
+            "say": "把地球拉近看看。它不是直着站的，它是歪着的",
+            "hold": 4000
+          },
+          {
+            "say": "歪着转一圈，有半年我们这边朝着太阳，有半年偏开",
+            "hold": 4200
+          },
+          {
+            "act": "orbitTo",
+            "args": {
+              "month": 6
+            }
+          },
+          {
+            "say": "六月，我们这边正朝着太阳。太阳就高，天就热",
+            "hold": 3800
+          },
+          {
+            "act": "orbitTo",
+            "args": {
+              "month": 12
+            }
+          },
+          {
+            "say": "十二月，我们这边偏开了。太阳就低，天就冷",
+            "hold": 3800
+          },
+          {
+            "wait": 800
+          }
+        ]
+      },
+      {
+        "name": "另一边",
+        "do": [
+          {
+            "say": "地球那么大，另一边也住着小朋友",
+            "hold": 3200
+          },
+          {
+            "ask": "在地球另一边，哪个月的中午太阳更高？",
+            "as": "gSouth",
+            "options": [
+              {
+                "label": "六月",
+                "icon": "🏖️",
+                "value": "summer"
+              },
+              {
+                "label": "十二月",
+                "icon": "🎄",
+                "value": "winter"
+              }
+            ]
+          },
+          {
+            "act": "compareSun",
+            "args": {
+              "a": 6,
+              "b": 12,
+              "lat": -35
+            },
+            "as": "higherSouth"
+          },
+          {
+            "judge": {
+              "expect": "higherSouth",
+              "against": "gSouth"
+            },
+            "hint": "再看看——在那边，十二月的太阳才是高高的"
+          },
+          {
+            "say": "正好和我们反过来。我们过冬天的时候，他们在过夏天",
+            "hold": 4000
+          },
+          {
+            "wait": 1000
+          }
+        ]
+      }
     ],
-
-    deeperResult: {
-      icon: '📐',
-      title: '不是远近，是斜着照还是直着照',
-      note: '同样一束阳光，夏天几乎是直着照下来，冬天斜着照，摊开的地方大得多。<br><br>' +
-            '{{ratio}}',
-      grown: '这一课的关键是拆掉「夏天热 = 离太阳近」这个几乎人人都有的错误概念。' +
-             '教科书上那种夸张的大椭圆轨道，恰恰是这个误解的来源之一 —— ' +
-             '真实偏心率只有 0.0167，画出来几乎就是正圆，本课就是按真实比例画的。',
-    },
+    "deeperResult": {
+      "icon": "🌍",
+      "title": "地球歪着转，才有了四季",
+      "note": "地球一直歪着<b>同一个方向</b>绕太阳转。<br>朝着太阳的那半年，太阳高，是夏天；<br>偏开的那半年，太阳低，是冬天。<br><br>地球两边的季节，正好是反的。",
+      "grown": "地轴与公转轨道面的法线成 23.44° 夹角，且在一年中指向基本不变（指向北极星附近）——方向恒定加上公转，才是四季的根本原因。南北半球季节相反，是同一机制的直接推论，不需要额外解释。可以追问：① 赤道上有明显的四季吗？② 北极为什么会有一天太阳整天不落？"
+    }
   },
 
   /* ---------- 内核 ---------- */
@@ -295,7 +513,7 @@ export default {
       patch.position.y = 0.02;
       g.add(patch);
       const tag = makeLabel('　', {size: 38});
-      tag.position.set(0, 3.2, 0);
+      tag.position.set(0, 2.9, 0);
       g.add(tag);
       g.userData = {pole, shadow, disc, beam, patch, tag};
       ground.add(g);
@@ -303,11 +521,13 @@ export default {
     }
     const rigA = makeRig(-5.2, 0xffb03a);   // 夏
     const rigB = makeRig(5.2, 0x6fa8dc);    // 冬
+    // 只出一根杆的时候要摆到画面中间，两根并排时才分开
+    const soloRig = solo => {rigA.position.x = solo ? 0 : -5.2;};
     rigB.visible = false;
 
     /** 按太阳高度角摆好：影子长度 = 杆高 / tan(h)，光斑宽度 = 束宽 / sin(h) */
-    function setRig(rig, m, {showBeam = false} = {}) {
-      const h = noonH(m);
+    function setRig(rig, m, {showBeam = false, lat = LAT} = {}) {
+      const h = noonH(m, lat);
       const rad = h * D2R;
       const POLE = 2.2, BEAM_W = 0.9;
       const shLen = POLE / Math.tan(rad);
@@ -341,6 +561,7 @@ export default {
 
     /* ===================== 编排能调的动作 ===================== */
 
+    /** 切到太空布景：太阳 + 轨道 + 地球，镜头拉到全景 */
     async function showSpace() {
       space.visible = true;
       ground.visible = false;
@@ -384,11 +605,13 @@ export default {
       return 'done';
     }
 
+    /** 切到地面布景：一根杆和它的影子，镜头压到地面高度。lat 是观察点纬度 */
     async function showGround({lat = LAT} = {}) {
       space.visible = false;
       ground.visible = true;
       rigA.visible = true; rigB.visible = false;
-      setRig(rigA, 6);
+      soloRig(true);
+      setRig(rigA, 6, {lat});
       rigA.userData.tag.userData.setText('？');
       await goCam('ground', 1000);
       return lat;
@@ -396,14 +619,18 @@ export default {
 
     /**
      * 并排比两个月的正午太阳高度：真算 h = 90° − |φ − δ|，
-     * 影子长度按 杆高/tan(h) 摆出来。返回太阳更高的那个月对应的季节。
+     * 影子长度按 杆高/tan(h) 摆出来。lat 可以传负数看南半球。
+     * 返回太阳更高的那个月的键（6→'summer'、12→'winter'，按月份定，与半球无关）。
      */
     async function compareSun({a = 6, b = 12, lat = LAT} = {}) {
       ground.visible = true;
       rigA.visible = rigB.visible = true;
-      const ha = setRig(rigA, a), hb = setRig(rigB, b);
-      rigA.userData.tag.userData.setText(`${CN[SEASON[a]]} ${ha.toFixed(0)}°`);
-      rigB.userData.tag.userData.setText(`${CN[SEASON[b]]} ${hb.toFixed(0)}°`);
+      soloRig(false);
+      const ha = setRig(rigA, a, {lat}), hb = setRig(rigB, b, {lat});
+      // 南半球不能叫「夏天/冬天」—— 那是北半球的说法，只报月份
+      const name = m => lat >= 0 ? CN[SEASON[m]] : `${m}月`;
+      rigA.userData.tag.userData.setText(`${name(a)} ${ha.toFixed(0)}°`);
+      rigB.userData.tag.userData.setText(`${name(b)} ${hb.toFixed(0)}°`);
       await wait(1400);
       return ha >= hb ? SEASON[a] : SEASON[b];
     }
@@ -424,7 +651,7 @@ export default {
       return da <= db ? SEASON[a] : SEASON[b];
     }
 
-    /** 亮出地轴：镜头拉近，让倾斜看得清楚 */
+    /** 亮出地轴：镜头拉近到地球，让 23.44° 的倾斜看得清楚 */
     async function showTilt() {
       await showSpace();
       await orbitTo({month: 6});
@@ -443,11 +670,12 @@ export default {
       space.visible = false;
       ground.visible = true;
       rigA.visible = rigB.visible = true;
-      const ha = setRig(rigA, a, {showBeam: true});
-      const hb = setRig(rigB, b, {showBeam: true});
+      soloRig(false);
+      const ha = setRig(rigA, a, {showBeam: true, lat});
+      const hb = setRig(rigB, b, {showBeam: true, lat});
       await goCam('ground', 1000);
 
-      const angle = fluxOf(a) / fluxOf(b);                       // 角度带来的差
+      const angle = Math.sin(noonH(a, lat) * D2R) / Math.sin(noonH(b, lat) * D2R);  // 角度带来的差
       const far = (distOf(a) / distOf(b)) ** 2;                  // 距离带来的差（反向）
       rigA.userData.tag.userData.setText(`${CN[SEASON[a]]} 太阳高 ${ha.toFixed(0)}°`);
       rigB.userData.tag.userData.setText(`${CN[SEASON[b]]} 太阳高 ${hb.toFixed(0)}°`);
@@ -463,6 +691,7 @@ export default {
       space.visible = true;
       ground.visible = false;
       rigA.visible = true; rigB.visible = false;
+      soloRig(true);
       infoTag.visible = false;
       curMonth = 12;
       earth.position.copy(posAt(curMonth));

@@ -178,6 +178,28 @@ build.mjs           单文件构建
 
 步骤条从 `flow` 派生，不用在 meta 里另写一份——两份必然会不同步。
 
+## 用 AI 生成教学编排
+
+因为编排是声明式的，它可以被生成，也可以被机器校验。
+
+```bash
+# 1. 组装 prompt（DSL 词汇表 + 这一课内核提供的动作 + 已有场景范例 + 校验规则）
+node gen.mjs seasons "四季是怎么形成的？为什么夏天热、冬天冷？给一年级看…"
+
+# 2. 把 prompts/seasons.md 喂给一个干净的模型会话，拿回 JSON
+
+# 3. 过尺子 —— 和手写编排完全同一套规则
+node gen.mjs --verify seasons generated/seasons.flow.json
+
+# 4. 装回场景
+node gen.mjs --apply seasons generated/seasons.flow.json
+```
+
+传输层是可替换的：现在靠人（或子代理）中转，等接了 API 只需在 `gen.mjs` 里加二十行。
+
+**「四季是怎么来的」这一课的编排就是这样生成的**，一次通过全部校验，零修改。
+`generated/seasons.handwritten.json` 是同一课的手写版，留着做对照。
+
 ## 新增一个场景
 
 新建一个文件 + 在注册表加一行，**不用碰 `src/core/`**。完整规范见 **[docs/场景模板规范.md](docs/场景模板规范.md)**。

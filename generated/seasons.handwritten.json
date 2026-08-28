@@ -1,0 +1,177 @@
+{
+  "steps": [
+    {
+      "name": "转一圈",
+      "do": [
+        {
+          "act": "showSpace"
+        },
+        {
+          "say": "这是太阳，这是我们住的地球",
+          "hold": 3000
+        },
+        {
+          "act": "orbitRun",
+          "args": {
+            "turns": 1
+          }
+        },
+        {
+          "ask": "地球绕着太阳跑一圈，要多久？",
+          "as": "g1",
+          "options": [
+            {
+              "label": "一天",
+              "icon": "🌙",
+              "value": "day"
+            },
+            {
+              "label": "一个月",
+              "icon": "📅",
+              "value": "month"
+            },
+            {
+              "label": "一年",
+              "icon": "🎂",
+              "value": "year"
+            }
+          ]
+        },
+        {
+          "judge": {
+            "correct": "year",
+            "against": "g1"
+          },
+          "hint": "跑完一圈，就过了一年"
+        }
+      ]
+    },
+    {
+      "name": "看四季",
+      "do": [
+        {
+          "say": "跑到不同的地方，我们这里就是不同的季节",
+          "hold": 3400
+        },
+        {
+          "act": "seasonTour"
+        }
+      ]
+    },
+    {
+      "name": "太阳有多高",
+      "do": [
+        {
+          "act": "showGround",
+          "args": {
+            "lat": 40
+          }
+        },
+        {
+          "ask": "夏天和冬天，哪个时候中午的太阳更高？",
+          "as": "g2",
+          "options": [
+            {
+              "label": "夏天",
+              "icon": "☀️",
+              "value": "summer"
+            },
+            {
+              "label": "冬天",
+              "icon": "❄️",
+              "value": "winter"
+            }
+          ]
+        },
+        {
+          "act": "compareSun",
+          "args": {
+            "a": 6,
+            "b": 12,
+            "lat": 40
+          },
+          "as": "higher"
+        },
+        {
+          "judge": {
+            "expect": "higher",
+            "against": "g2"
+          },
+          "hint": "夏天太阳高，影子就短"
+        }
+      ]
+    }
+  ],
+  "result": {
+    "icon": "🌍",
+    "title": "地球跑到不同的地方，就是不同的季节",
+    "note": "夏天中午的太阳<b>高高的</b>，影子很短；<br>冬天中午的太阳<b>低低的</b>，影子拖得长长的。",
+    "grown": "表层到这里就够一年级了。想往下讲，点「为什么会冷会热」。"
+  },
+  "deeperLabel": "为什么会冷会热？",
+  "deeper": [
+    {
+      "name": "是因为近吗",
+      "do": [
+        {
+          "ask": "夏天热，是因为地球离太阳更近吗？",
+          "as": "g3",
+          "options": [
+            {
+              "label": "是的",
+              "icon": "👍",
+              "value": "summer"
+            },
+            {
+              "label": "不是",
+              "icon": "🤔",
+              "value": "winter"
+            }
+          ]
+        },
+        {
+          "act": "compareDistance",
+          "args": {
+            "a": 6,
+            "b": 12
+          },
+          "as": "closer"
+        },
+        {
+          "judge": {
+            "expect": "closer",
+            "against": "g3"
+          },
+          "hint": "反过来了 —— 北半球夏天时，地球其实离太阳更远"
+        }
+      ]
+    },
+    {
+      "name": "真正的原因",
+      "do": [
+        {
+          "say": "真正的原因是地球是斜着的",
+          "hold": 3000
+        },
+        {
+          "act": "showTilt"
+        },
+        {
+          "act": "energyRatio",
+          "args": {
+            "a": 6,
+            "b": 12,
+            "lat": 40
+          },
+          "as": "ratio"
+        }
+      ]
+    }
+  ],
+  "deeperResult": {
+    "icon": "📐",
+    "title": "不是远近，是斜着照还是直着照",
+    "note": "同样一束阳光，夏天几乎是直着照下来，冬天斜着照，摊开的地方大得多。<br><br>{{ratio}}",
+    "grown": "这一课的关键是拆掉「夏天热 = 离太阳近」这个几乎人人都有的错误概念。教科书上那种夸张的大椭圆轨道，恰恰是这个误解的来源之一 —— 真实偏心率只有 0.0167，画出来几乎就是正圆，本课就是按真实比例画的。"
+  }
+}

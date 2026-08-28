@@ -13,7 +13,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { SCENES } from './src/scenes/index.js';
-import { createFlowRunner } from './src/core/flow.js';
+import { lintFlow, lintKernel } from './flow-lint.mjs';
 import { PHYS } from './src/scenes/seasons.js';
 
 const fails = [];
@@ -87,119 +87,14 @@ for (const s of SCENES) {
   }
 }
 
-/* ---------- 规则 7：教学编排（flow）自洽 ----------
- *
- * 这一组是整套自检里最值钱的部分：一份编排是不是合格的教学设计，
- * 大半可以纯靠结构判定，不需要模型来看。AI 生成的编排先过这一关。
+/* ---------- 规则 7 + 8：教学编排（flow）----------
+ * 规则本体在 flow-lint.mjs —— 生成出来的编排走的是同一套尺子，不能有双标。
  */
 for (const s of SCENES) {
   if (!s.flow) continue;
-  const f = s.flow;
   const src = readFileSync(new URL(`./src/scenes/${s.id}.js`, import.meta.url), 'utf8');
-
-  // 内核实际提供了哪些动作：从 `return {actions: {a, b, c}` 里读
-  const am = src.match(/return\s*\{\s*actions:\s*\{([^}]*)\}/);
-  const known = new Set((am ? am[1] : '').split(',').map(x => x.trim().split(':')[0]).filter(Boolean));
-
-  const all = [...(f.steps || []), ...(f.deeper || [])];
-  if (!all.length) {fail(s.id, 'flow 里一步都没有'); continue;}
-
-  const defined = new Set();      // 已经被 as 定义的变量
-  const asked = new Set();        // 孩子答过的问题变量
-  const judged = new Set();       // 被揭晓用掉的变量
-  let computedJudge = 0;          // 答案是算出来的（expect）而不是写死的（correct）
-
-  for (const st of all) {
-    if (!st.name) fail(s.id, 'flow 里有一步没有 name');
-    if (!Array.isArray(st.do) || !st.do.length) fail(s.id, `「${st.name}」这一步是空的`);
-    for (const ins of st.do || []) {
-      if (ins.act !== undefined) {
-        if (!known.has(ins.act)) fail(s.id, `编排调用了内核没有的动作：${ins.act}`);
-        if (ins.as) defined.add(ins.as);
-      }
-      if (ins.ask !== undefined) {
-        if (!Array.isArray(ins.options) || ins.options.length < 2)
-          fail(s.id, `「${ins.ask}」的选项少于 2 个`);
-        if (!ins.as) fail(s.id, `「${ins.ask}」没有用 as 记下孩子的答案`);
-        else {defined.add(ins.as); asked.add(ins.as);}
-      }
-      if (ins.judge !== undefined) {
-        const {expect, correct, against} = ins.judge;
-        if (!against) fail(s.id, 'judge 缺少 against（拿什么和孩子的答案比）');
-        else {
-          if (!defined.has(against)) fail(s.id, `judge 用了还没定义的变量 ${against}`);
-          judged.add(against);
-        }
-        if (expect === undefined && correct === undefined)
-          fail(s.id, 'judge 既没有 expect 也没有 correct');
-        if (expect !== undefined) {
-          if (!defined.has(expect)) fail(s.id, `judge 的 expect 用了还没定义的变量 ${expect}`);
-          computedJudge++;
-        }
-      }
-    }
-  }
-
-  // 教学法底线一：必须有让孩子先猜的地方
-  if (!asked.size) fail(s.id, '整条编排没有一个 ask —— 学生全程只是在看');
-
-  // 教学法底线二：猜了就必须揭晓，不能问完不了了之
-  for (const v of asked) {
-    if (!judged.has(v)) fail(s.id, `问了「${v}」却没有揭晓（缺 judge）`);
-  }
-
-  // 教学法底线三：至少有一个答案是算出来的，不是写死的
-  if (!computedJudge)
-    warn(s.id, '所有揭晓的答案都是写死的（correct），没有一个是算出来的（expect）');
-
-  // 结论卡：必须有，且引用的变量必须存在
-  if (!f.result) fail(s.id, 'flow 没有 result —— 这节课走不到结论');
-  const refs = JSON.stringify(f.result || {}).match(/\{\{(\w+)\}\}/g) || [];
-  for (const r of refs) {
-    const k = r.slice(2, -2);
-    if (!defined.has(k)) fail(s.id, `结论卡引用了不存在的变量 {{${k}}}`);
-  }
-
-  // 深层必须是可选的：表层自己得能收尾
-  if (f.deeper?.length && !f.result) fail(s.id, '有深层却没有表层结论卡');
-}
-
-/* ---------- 规则 8：无头跑一遍，确认走得到结论 ----------
- *
- * 结构合法不等于走得通。这一条真的把编排跑一遍（动作全部打桩、
- * 提问一律选第一项），看它会不会走进死胡同或者卡住。
- * 生成出来的编排最容易犯的就是这种错，而它纯靠读代码看不出来。
- */
-for (const s of SCENES) {
-  if (!s.flow) continue;
-  const seen = {result: 0, steps: new Set(), asks: 0};
-  const stubUI = {
-    say: () => Promise.resolve(),
-    ask: () => {seen.asks++; return Promise.resolve({index: 0});},
-    judge: () => Promise.resolve(),
-    tally: () => {}, setStep: n => seen.steps.add(n), addSteps: () => {},
-    showResult: () => {seen.result++; return {};},
-    hideResult: () => {},
-  };
-  // 动作全部打桩：这里只验流程走不走得通，不验物理
-  const stubActions = new Proxy({}, {
-    get: () => async () => '__stub__',
-    has: () => true,
-  });
-
-  const done = await Promise.race([
-    createFlowRunner({ui: stubUI, actions: stubActions, flow: s.flow, onDone(){}})
-      .run().then(() => 'ok', e => 'throw:' + e.message),
-    new Promise(r => setTimeout(() => r('timeout'), 8000)),
-  ]);
-
-  if (done === 'timeout') fail(s.id, '无头跑不完 —— 编排里有一步永远等不到结果');
-  else if (done !== 'ok') fail(s.id, `无头跑的时候报错：${done.slice(6)}`);
-  else {
-    if (!seen.result) fail(s.id, '跑完了却没有走到结论卡');
-    const want = s.flow.steps.length;
-    if (seen.steps.size < want)
-      fail(s.id, `只走到了 ${seen.steps.size} 步，编排里声明了 ${want} 步`);
+  for (const {level, msg} of [...lintKernel(src), ...await lintFlow(s.flow, src)]) {
+    (level === 'fail' ? fail : warn)(s.id, msg);
   }
 }
 
