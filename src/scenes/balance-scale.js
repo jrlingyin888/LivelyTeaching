@@ -479,8 +479,8 @@ export default {
     }
 
     // 这两个要等孩子自己操作，可能等很久 —— 告诉 runner 别当成卡住
-    measureAll.waitsForChild = true;
-    sortByWeight.waitsForChild = true;
+    measureAll.patient = true;
+    sortByWeight.patient = true;
 
     return {actions: {weigh, measureAll, sortByWeight}, reset};
   },

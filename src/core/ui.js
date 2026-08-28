@@ -256,8 +256,12 @@ export function createUI() {
         <button class="b ghost" id="btnBackHome">换一个</button>
       </div>`;
     el.result.querySelector('#btnBackHome').onclick = backHome;
-    // 「为什么会这样？」通往深层，比「再玩一次」更该被点，所以它当主按钮
-    if (r.more) el.result.querySelector('#btnMore').onclick = () => r.more.run();
+    // 「为什么会这样？」通往深层，比「再玩一次」更该被点，所以它当主按钮。
+    // 点过就禁用 —— 孩子双击很常见，跑两遍深层会把画面搞乱。
+    if (r.more) {
+      const b = el.result.querySelector('#btnMore');
+      b.onclick = () => {b.disabled = true; b.classList.add('dim'); r.more.run();};
+    }
     el.result.classList.add('show');
     say(r.title + (r.note ? '。' + r.note : ''));
     return el.result.querySelector('#btnAgain');   // 场景自己绑「再玩一次」

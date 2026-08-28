@@ -5,8 +5,9 @@
 import solidShapes from './solid-shapes.js';
 import balanceScale from './balance-scale.js';
 import caochong from './caochong-chengxiang.js';
+import seasons from './seasons.js';
 
-export const SCENES = [solidShapes, balanceScale, caochong];
+export const SCENES = [solidShapes, balanceScale, caochong, seasons];
 
 /**
  * 按关键词匹配场景。

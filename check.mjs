@@ -14,6 +14,7 @@
 import { readFileSync } from 'node:fs';
 import { SCENES } from './src/scenes/index.js';
 import { createFlowRunner } from './src/core/flow.js';
+import { PHYS } from './src/scenes/seasons.js';
 
 const fails = [];
 const warns = [];
@@ -203,6 +204,42 @@ for (const s of SCENES) {
 }
 
 /* ---------- 规则 6：学科不变量 ---------- */
+
+/* 四季：这一课全部的内容就是这几个公式，错了就是在教错东西 */
+{
+  const P = PHYS, near = (a, b, eps) => Math.abs(a - b) < eps;
+  const S = 6, W = 12;                                  // 北半球夏 / 冬
+
+  // 夏至昼长 + 冬至昼长 必须正好是 24 小时（同一纬度上互补）
+  const sum = P.dayLen(S) + P.dayLen(W);
+  if (!near(sum, 24, 0.02)) fail('seasons', `夏冬昼长之和 ${sum.toFixed(2)}h，应为 24h`);
+
+  // 春分秋分赤纬接近 0
+  for (const m of [3, 9]) {
+    if (Math.abs(P.decl(P.dayOf(m))) > 3)
+      fail('seasons', `${m} 月赤纬 ${P.decl(P.dayOf(m)).toFixed(1)}°，春秋分附近应接近 0`);
+  }
+
+  // 太阳高度角必须落在 0–90°
+  for (let m = 1; m <= 12; m++) {
+    const h = P.noonH(m);
+    if (h <= 0 || h > 90) fail('seasons', `${m} 月正午太阳高度 ${h.toFixed(1)}°，超出 0–90°`);
+  }
+
+  // 这一课的引爆点：北半球夏天，地球反而离太阳更远。反了就整课白讲
+  if (!(P.distOf(S) > P.distOf(W)))
+    fail('seasons', '算出来夏天离太阳更近 —— 这一课的核心事实反了');
+
+  // 角度的影响必须远大于距离，否则「不是远近，是角度」这个结论就不成立。
+  // 比的是两个效应各自偏离 1 的幅度：角度 +113%，距离 −6.5%，差着一个数量级。
+  const byAngle = P.fluxOf(S) / P.fluxOf(W);
+  const byDist = (P.distOf(S) / P.distOf(W)) ** 2;
+  if (byAngle < 1.5) fail('seasons', `角度带来的差只有 ${byAngle.toFixed(2)} 倍，撑不起结论`);
+  const eAngle = Math.abs(byAngle - 1), eDist = Math.abs(byDist - 1);
+  if (eAngle < eDist * 5)
+    fail('seasons', `角度的影响（${(eAngle * 100).toFixed(0)}%）没有明显压过距离（${(eDist * 100).toFixed(0)}%），结论站不住`);
+}
+
 /* 天平：物体质量必须是方块单位的整数倍，否则一年级会量出「五块多一点」 */
 {
   const src = readFileSync(new URL('./src/scenes/balance-scale.js', import.meta.url), 'utf8');

@@ -56,12 +56,12 @@ export function createFlowRunner({ui, actions, flow, onDone}) {
    * 生成出来的编排如果调了一个永不返回的动作，否则只会静静地卡死，
    * 屏幕上什么都不动，没人知道卡在哪。
    *
-   * 例外：ask 和「等孩子操作」的动作（内核标 waitsForChild）本来就该慢，
-   * 孩子想多久都行，不算卡住。
+   * 例外：ask，以及内核标了 patient 的动作 —— 有的在等孩子操作（可以等几分钟），
+   * 有的是一段长动画（地球绕一圈要 20 秒）。这两种本来就慢，不算卡住。
    */
   async function one(ins) {
     const label = ins.act || ins.ask || ins.say || Object.keys(ins)[0];
-    const patient = ins.ask !== undefined || actions[ins.act]?.waitsForChild;
+    const patient = ins.ask !== undefined || actions[ins.act]?.patient;
     const wd = patient ? 0 : setTimeout(
       () => console.warn('[flow] 这条指令卡住超过 15 秒：', label, ins), 15000);
     try {
@@ -124,17 +124,22 @@ export function createFlowRunner({ui, actions, flow, onDone}) {
 
   /** 跑完表层 → 结论卡；有深层就在卡上挂一个「为什么」按钮 */
   async function run() {
+    deeperRun = false;
     await runSteps(flow.steps);
     if (stopped) return;
     showResult(flow.result, !!flow.deeper?.length);
   }
 
+  let deeperRun = false;      // 深层只能进一次：连点会把它跑成好几份
+
   function showResult(spec, withDeeper) {
     const again = ui.showResult({
       ...fillDeep(spec),
-      more: withDeeper ? {
+      more: withDeeper && !deeperRun ? {
         label: flow.deeperLabel || '为什么会这样？',
         run: async () => {
+          if (deeperRun) return;
+          deeperRun = true;
           ui.hideResult();
           ui.addSteps(flow.deeper.map(x => x.name));   // 深层的点这时才长出来
           await runSteps(flow.deeper, flow.steps.length);
