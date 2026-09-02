@@ -292,12 +292,35 @@ export default {
     oRing.material.depthTest = false; oRing.renderOrder = 20;
     orbit.add(oRing);
 
+    /*
+     * 小地球分三层，顺序不能乱：
+     *   oEarth  —— 只管在轨道上的位置，不带任何旋转
+     *   oNight  —— 背着太阳的那半边（昼夜分界），朝向由太阳方向决定
+     *   oTilt   —— 地轴倾角，**永远不变**。这是四季的全部原因，一动这一课就废了
+     *
+     * 之前把倾角和自转都塞在同一个 Group 上（rotation.z 和 rotation.y），
+     * Three.js 欧拉角默认 XYZ 序 = 先倾斜再绕世界竖直轴转，
+     * 地轴就绕着竖直方向进动，看上去左右摇摆 —— 正好把要教的东西教反了。
+     */
     const oEarth = new THREE.Group();
-    oEarth.add(hud(new THREE.Mesh(new THREE.SphereGeometry(1.05, 24, 18),
-      new THREE.MeshBasicMaterial({color: 0x4a94d0}))));
-    oEarth.add(hud(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.2, 8),
-      new THREE.MeshBasicMaterial({color: 0xff6b5b}))));
-    oEarth.rotation.z = -TILT * D2R;      // 地轴朝向固定 —— 四季的全部原因
+    oEarth.add(hud(new THREE.Mesh(new THREE.SphereGeometry(1.05, 26, 20),
+      new THREE.MeshBasicMaterial({color: 0x5aa3dd}))));
+
+    // 背光的那半边。地球在轨道上走一圈，这半边始终背着中间的太阳
+    const oNight = hud(new THREE.Mesh(
+      new THREE.CircleGeometry(1.07, 28, 0, Math.PI),
+      new THREE.MeshBasicMaterial({color: 0x12233a, transparent: true, opacity: 0.88})));
+    oNight.position.z = 0.02;
+    oNight.renderOrder = 21;
+    oEarth.add(oNight);
+
+    const oTilt = new THREE.Group();
+    oTilt.rotation.z = -TILT * D2R;       // 定死。别在任何地方动它
+    const rod = hud(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.2, 8),
+      new THREE.MeshBasicMaterial({color: 0xff6b5b})));
+    rod.renderOrder = 22;
+    oTilt.add(rod);
+    oEarth.add(oTilt);
     orbit.add(oEarth);
 
     /* ============ 世界 = f(第几天, 几点) ============ */
@@ -353,7 +376,10 @@ export default {
 
       // 轨道小图里的地球
       const r = R * (1 - ECC * Math.cos(2 * Math.PI * (day - 3) / 365));
-      oEarth.position.set(r * Math.cos(theta(day)), r * Math.sin(theta(day)) * 0.42, 0);
+      const px = r * Math.cos(theta(day)), py = r * Math.sin(theta(day)) * 0.42;
+      oEarth.position.set(px, py, 0);
+      // 半圆默认盖住 +y 那半边（中心朝 90°），转到「背离太阳」的方向上
+      oNight.rotation.z = Math.atan2(py, px) - Math.PI / 2;
 
       // 读数
       const si = seasonIdx(day);
@@ -369,7 +395,7 @@ export default {
       ]);
     }
 
-    ctx.onFrame((dt, t) => {oEarth.rotation.y = t * 0.5; placeOrbit();});
+    ctx.onFrame(() => placeOrbit());
 
     const SEASON_TRACK =
       'linear-gradient(90deg,#5b86b8 0%,#7fb069 22%,#e8a33d 47%,#c9743a 72%,#5b86b8 100%)';
