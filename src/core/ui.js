@@ -22,7 +22,7 @@ export function createUI() {
     steps: $('steps'), actions: $('actions'), toast: $('toast'),
     result: $('result'), home: $('home'), homeGrid: $('homeGrid'),
     say: $('say'), ask: $('ask'), judge: $('judge'), tally: $('tally'),
-    toy: $('toy'), toyHead: $('toyHead'), toyFacts: $('toyFacts'), slider: $('slider'),
+    toy: $('toy'), toyHead: $('toyHead'), toyFacts: $('toyFacts'), sliders: $('toySliders'),
     btnHome: $('btnHome'), btnVoice: $('btnVoice'),
   };
   let statRefs = {}, stepEls = [], toastT, sayT, judgeT;
@@ -211,29 +211,64 @@ export function createUI() {
    * 脚本模式里时间是脚本的，孩子只能等；玩具模式里时间是孩子的。
    * 世界是「参数的函数」，滑块就是那个参数 —— 所以天然能回退：拖回去就行。
    */
-  function mountToy({min, max, value, onInput}) {
+  /**
+   * @param sliders [{key, min, max, step, value, icon, track, fmt}]
+   *        track 是轨道的 CSS 渐变，fmt 把当前值格式化成右边那行小字
+   * @param onInput 收到的是全部滑块的当前值 {key: value}
+   */
+  function mountToy({sliders, onInput}) {
     el.toy.classList.add('on');
-    Object.assign(el.slider, {min, max, value});
-    const fire = () => onInput(Number(el.slider.value));
-    el.slider.oninput = fire;
-    // 键盘左右键也能拖（大人用得上），滚轮同理
-    el.slider.onwheel = e => {
-      e.preventDefault();
-      el.slider.value = Number(el.slider.value) + (e.deltaY > 0 ? 2 : -2);
-      fire();
+    el.sliders.innerHTML = '';
+    const state = {}, labels = {};
+
+    for (const sp of sliders) {
+      state[sp.key] = sp.value;
+      const row = document.createElement('div');
+      row.className = 'srow';
+      row.innerHTML =
+        `<span class="si">${sp.icon || ''}</span>` +
+        `<input class="sld" type="range">` +
+        `<span class="sv"></span>`;
+      const inp = row.querySelector('.sld');
+      Object.assign(inp, {min: sp.min, max: sp.max, step: sp.step ?? 1, value: sp.value});
+      inp.style.setProperty('--trk', sp.track || '#3d5b80');
+      labels[sp.key] = row.querySelector('.sv');
+
+      const push = () => {
+        state[sp.key] = Number(inp.value);
+        labels[sp.key].textContent = sp.fmt ? sp.fmt(state[sp.key]) : state[sp.key];
+        onInput({...state});
+      };
+      inp.oninput = push;
+      // 滚轮和键盘也能拖 —— 大人用得上，微调时比手指准
+      inp.onwheel = e => {
+        e.preventDefault();
+        const d = (Number(inp.step) || 1) * (e.deltaY > 0 ? 3 : -3);
+        inp.value = Number(inp.value) + d;
+        push();
+      };
+      el.sliders.appendChild(row);
+      labels[sp.key].textContent = sp.fmt ? sp.fmt(sp.value) : sp.value;
+    }
+    onInput({...state});
+    /** 场景想自己改滑块的值（比如「跳到正午」）*/
+    return (key, v) => {
+      const inp = [...el.sliders.querySelectorAll('.sld')][sliders.findIndex(x => x.key === key)];
+      if (!inp) return;
+      inp.value = v;
+      inp.dispatchEvent(new Event('input'));
     };
-    fire();
   }
   const unmountToy = () => {
     el.toy.classList.remove('on');
-    el.slider.oninput = el.slider.onwheel = null;
+    el.sliders.innerHTML = '';
     el.toyHead.textContent = ''; el.toyFacts.innerHTML = '';
   };
   const headline = t => {el.toyHead.textContent = t;};
   /** 一行轻量读数。不做成面板 —— 面板会让它看起来像个仪表盘 */
   const facts = rows => {
     el.toyFacts.innerHTML = (rows || [])
-      .map(r => `<span>${r.label}<b>${r.value}</b></span>`).join('');
+      .map(r => `<span class="${r.dim ? 'dim' : ''}">${r.label}<b>${r.value}</b></span>`).join('');
   };
 
   /* ================= 步骤 ================= */

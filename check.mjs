@@ -91,8 +91,11 @@ for (const s of SCENES) {
     if (!P) {
       warn(s.id, '玩具场景没有导出 PHYS —— 没法验证滑块是不是真的驱动了世界');
     } else {
-      for (const [k, fn] of Object.entries(P)) {
-        if (typeof fn !== 'function' || k === 'dayOf') continue;
+      if (!Array.isArray(P.driven) || !P.driven.length)
+        fail(s.id, 'PHYS 没有声明 driven —— 得指明哪几个量是被滑块驱动的');
+      for (const k of P.driven || []) {
+        const fn = P[k];
+        if (typeof fn !== 'function') {fail(s.id, `driven 里的 ${k} 不是函数`); continue;}
         let lo = Infinity, hi = -Infinity;
         for (let N = 1; N <= 365; N++) {
           const v = fn(N);

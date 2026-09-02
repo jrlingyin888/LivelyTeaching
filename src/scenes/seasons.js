@@ -1,241 +1,360 @@
 /**
- * 场景：四季是怎么来的（玩具模式）
+ * 场景：四季是怎么来的（玩具模式 · 两根轴）
  * 学科：小学科学 · 地球与宇宙
  *
- * 这一课做成玩具而不是课件，是想清楚之后的一次推倒重来：
+ * 两根滑块 = 一个可以自由逛的二维世界：
+ *   第几天（1-365）  地球走到轨道哪儿、太阳能爬多高、白天多长
+ *   几点（0-24）     太阳在天上的走位、影子转到哪个方向、天什么颜色
  *
- *   脚本模式  时间归脚本 —— 念旁白、播动画、弹窗提问，孩子平均 40 秒才轮到点一下，
- *             而且没法回退，因为压根没有「状态」可回，只有一条跑到哪算哪的协程。
- *   玩具模式  时间归孩子 —— 整个世界是**一天**这个参数的函数，滑块就是那个参数。
- *             拖到哪，世界就长成哪一天的样子。想回去，拖回去。
+ * 拖「几点」看日夜更替，拖「第几天」换季节，两根一起拖就明白了：
+ * 夏天太阳从东北方升起、爬得很高、很晚才落；冬天从东南方勉强露头、
+ * 一天都是斜着照、下午四点就擦黑。
  *
- * 好在物理本来就是参数化的：太阳高度、昼长、日地距离、地球位置，
- * 全都是 f(第几天)。之前是把一个能自由转的地球仪，做成了一段录像。
+ * 全真算。太阳在天上的位置用地平坐标系三分量给全（e 东 / n 北 / u 天顶）：
+ *   e = −cos δ · sin H
+ *   n =  sin δ · cos φ − cos δ · sin φ · cos H
+ *   u =  sin δ · sin φ + cos δ · cos φ · cos H
+ *   其中 δ 是太阳赤纬，φ 是纬度，H = (时刻 − 12) × 15° 是时角
+ * 影子不是画的，是真的 —— 一盏平行光摆在太阳的方向上，Three.js 投出来的。
  *
- * 公式（全真算，没有一个数是写死的）：
- *   太阳赤纬     δ = 23.44° · sin(2π(N−81)/365)
- *   正午太阳高度  h = 90° − |φ − δ|
- *   影子长度     L = 杆高 / tan(h)
- *   昼长         cos H₀ = −tanφ·tanδ,  昼长 = 2H₀/15 小时
- *   日地距离     r = 1.496 · (1 − 0.0167·cos(2π(N−3)/365)) 亿 km
- *
- * 一个刻意的建模决定：轨道按真实偏心率画（e=0.0167），所以看上去几乎是正圆。
- * 教科书上那种夸张的大椭圆，本身就是「夏天离太阳近」这个误解的来源之一。
+ * 一个刻意的建模决定：轨道按真实偏心率画（e=0.0167），看上去几乎是正圆。
+ * 教科书那种夸张的大椭圆，本身就是「夏天离太阳近」这个误解的来源之一。
  */
 import * as THREE from 'three';
 
-/* ===================== 天文常数与公式 ===================== */
-const TILT = 23.44;                 // 地轴倾角
-const LAT = 40;                     // 观察点：北纬 40°
-const ECC = 0.0167;                 // 轨道偏心率 —— 小到画出来就是个圆
-const AU = 1.496;                   // 亿 km
-const D2R = Math.PI / 180;
-const POLE_H = 3.0;                 // 杆高（场景单位）
+/* ===================== 天文 ===================== */
+const TILT = 23.44, LAT = 40, ECC = 0.0167, AU = 1.496, D2R = Math.PI / 180;
+const PERSON_H = 1.75;
 
-const decl   = N => TILT * Math.sin(2 * Math.PI * (N - 81) / 365);
-const noonH  = (N, lat = LAT) => 90 - Math.abs(lat - decl(N));
-const shadow = (N, lat = LAT) => POLE_H / Math.tan(Math.max(2, noonH(N, lat)) * D2R);
+const decl = N => TILT * Math.sin(2 * Math.PI * (N - 81) / 365);
+
+/** 太阳在地平坐标系里的单位向量。e 东、n 北、u 天顶 */
+function sunVec(N, hour, lat = LAT) {
+  const d = decl(N) * D2R, p = lat * D2R, H = (hour - 12) * 15 * D2R;
+  return {
+    e: -Math.cos(d) * Math.sin(H),
+    n: Math.sin(d) * Math.cos(p) - Math.cos(d) * Math.sin(p) * Math.cos(H),
+    u: Math.sin(d) * Math.sin(p) + Math.cos(d) * Math.cos(p) * Math.cos(H),
+  };
+}
+const altOf = v => Math.asin(Math.max(-1, Math.min(1, v.u))) / D2R;
+/** 影子长 = 身高 / tan(太阳高度)。太阳越低影子越长，落到地平线就没有影子了 */
+const shadowRatio = v => v.u <= 0.02 ? Infinity : Math.hypot(v.e, v.n) / v.u;
+
+const noonH = (N, lat = LAT) => 90 - Math.abs(lat - decl(N));
 const dayLen = (N, lat = LAT) => {
   const d = decl(N);
   const c = Math.max(-1, Math.min(1, -Math.tan(lat * D2R) * Math.tan(d * D2R)));
   return 2 * Math.acos(c) / D2R / 15;
 };
 const distOf = N => AU * (1 - ECC * Math.cos(2 * Math.PI * (N - 3) / 365));
-/** 地球在轨道上的角度：夏至（N=172）在 180°，冬至在 0° */
-const theta  = N => (180 + 360 * (N - 172) / 365) * D2R;
+const theta = N => (180 + 360 * (N - 172) / 365) * D2R;
 
 const monthOf = N => Math.min(12, Math.floor((N - 1) / 30.4) + 1);
 const dayInMonth = N => Math.max(1, Math.round(N - (monthOf(N) - 1) * 30.4));
 const SEASON_CN = ['冬天', '春天', '夏天', '秋天'];
 const SEASON_EMOJI = ['❄️', '🌸', '☀️', '🍂'];
-const seasonIdx = N => {
-  const m = monthOf(N);
-  return m <= 2 || m === 12 ? 0 : m <= 5 ? 1 : m <= 8 ? 2 : 3;
+const seasonIdx = N => {const m = monthOf(N); return m <= 2 || m === 12 ? 0 : m <= 5 ? 1 : m <= 8 ? 2 : 3;};
+const clock = h => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`;
+
+export const PHYS = {
+  TILT, LAT, ECC, decl, noonH, dayLen, distOf, sunVec, altOf,
+  shadow: N => 1 / Math.tan(noonH(N) * D2R),
+  fluxOf: (N, lat = LAT) => Math.sin(noonH(N, lat) * D2R),
+  dayOf: m => 30.4 * (m - 1) + 15,
+  /**
+   * 明确告诉 check.mjs 该扫哪几个：这些必须是 f(第几天) → 数，
+   * 而且拖一整年都得明显变化，否则滑块就是个装饰。
+   * 显式列出来，比让检查去猜每个导出函数的签名靠谱。
+   */
+  driven: ['decl', 'noonH', 'dayLen', 'distOf', 'shadow', 'fluxOf'],
 };
 
-/** 给 check.mjs：这几个公式就是这一课的全部内容，错了就是在教错东西 */
-export const PHYS = {TILT, LAT, ECC, decl, noonH, dayLen, distOf, shadow,
-                     fluxOf: (N, lat = LAT) => Math.sin(noonH(N, lat) * D2R),
-                     dayOf: m => 30.4 * (m - 1) + 15};
+/* ===================== 贴图小工具 ===================== */
+/** 一张径向渐变，用来做太阳的光晕。比上一整套后期便宜太多，效果也够 */
+function glowTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+  grd.addColorStop(0.00, 'rgba(255,255,240,1)');
+  grd.addColorStop(0.12, 'rgba(255,238,170,.95)');
+  grd.addColorStop(0.30, 'rgba(255,190,90,.45)');
+  grd.addColorStop(0.60, 'rgba(255,150,60,.13)');
+  grd.addColorStop(1.00, 'rgba(255,140,50,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 256, 256);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
 
 /* ===================== 场景 ===================== */
 export default {
   id: 'seasons',
   name: '四季是怎么来的',
   icon: '🌍',
-  keywords: ['四季', '季节', '公转', '地球绕太阳', '为什么夏天热', '冬天冷', '地轴'],
+  keywords: ['四季', '季节', '公转', '地球绕太阳', '为什么夏天热', '冬天冷', '地轴', '日夜', '昼夜'],
   subject: '小学科学',
   grade: '小学科学 · 地球与宇宙',
-  topic: '公转 · 地轴倾角 · 太阳高度角',
-  objects: '太阳、地球、地轴、影子',
-
-  /** 玩具模式：不跑脚本，孩子拖滑块，世界跟着变 */
+  topic: '公转 · 地轴倾角 · 太阳高度角 · 昼夜',
+  objects: '太阳、地球、地轴、影子、小人',
   toy: true,
 
-  stage: {cameraPos: [0, 6.8, 20], target: [0, 5.2, 0], withWater: false,
+  // 面朝正南：太阳从左边（东）升起，正前方（南）最高，右边（西）落下
+  stage: {cameraPos: [0, 3.4, -15.5], target: [0, 4.6, 1.6], withWater: false,
           withGround: false, sky: 0x0a1428},
 
   build(ctx) {
     const {scene, ui, camera, controls} = ctx;
+    scene.background = null;
+    scene.fog = null;
 
-    /* ============ 地面：一根杆和它的影子（主角）============ */
-    const ground = new THREE.Group();
-    ground.position.y = 1.2;
-    scene.add(ground);
-    ground.add(new THREE.AmbientLight(0xffffff, 0.9));
+    /* ---------- 天空穹顶：颜色由太阳高度驱动 ---------- */
+    const skyUni = {
+      top: {value: new THREE.Color(0x2b6cb0)},
+      bottom: {value: new THREE.Color(0xbcdcf2)},
+    };
+    const sky = new THREE.Mesh(
+      new THREE.SphereGeometry(120, 32, 20),
+      new THREE.ShaderMaterial({
+        side: THREE.BackSide, depthWrite: false, uniforms: skyUni,
+        vertexShader: `varying vec3 vP; void main(){ vP = position;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+        fragmentShader: `uniform vec3 top; uniform vec3 bottom; varying vec3 vP;
+          void main(){ float h = normalize(vP).y;
+            gl_FragColor = vec4(mix(bottom, top, clamp(h*1.15+0.16, 0.0, 1.0)), 1.0); }`,
+      }));
+    scene.add(sky);
 
+    /* ---------- 星空 ---------- */
+    const STAR_N = 2200, sp = new Float32Array(STAR_N * 3), ss = new Float32Array(STAR_N);
+    for (let i = 0; i < STAR_N; i++) {
+      const u = Math.random() * 2 - 1, a = Math.random() * Math.PI * 2, r = 108;
+      const s = Math.sqrt(1 - u * u);
+      sp.set([r * s * Math.cos(a), r * Math.abs(u) * 0.9 + 2, r * s * Math.sin(a)], i * 3);
+      ss[i] = 0.28 + Math.random() * Math.random() * 1.5;   // 少数几颗特别亮，像真的
+    }
+    const starGeo = new THREE.BufferGeometry();
+    starGeo.setAttribute('position', new THREE.BufferAttribute(sp, 3));
+    starGeo.setAttribute('size', new THREE.BufferAttribute(ss, 1));
+    const starMat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      uniforms: {alpha: {value: 0}},
+      vertexShader: `attribute float size; varying float vS;
+        void main(){ vS = size; vec4 mv = modelViewMatrix * vec4(position,1.0);
+          gl_PointSize = size * 260.0 / -mv.z; gl_Position = projectionMatrix * mv; }`,
+      fragmentShader: `uniform float alpha; varying float vS;
+        void main(){ float d = length(gl_PointCoord - 0.5);
+          if (d > 0.5) discard;
+          gl_FragColor = vec4(1.0, 0.97, 0.9, alpha * smoothstep(0.5, 0.0, d) * min(1.0, vS)); }`,
+    });
+    scene.add(new THREE.Points(starGeo, starMat));
+
+    /* ---------- 太阳 ---------- */
+    const SKY_R = 9.5;   // 天球半径。压得小，是为了让「人 + 影子 + 一整条太阳轨迹」同框
+    const sunBall = new THREE.Mesh(
+      new THREE.SphereGeometry(0.52, 26, 18),
+      new THREE.MeshBasicMaterial({color: 0xfff3c4}));
+    scene.add(sunBall);
+    const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTexture(), transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending}));
+    sunGlow.scale.setScalar(7);
+    scene.add(sunGlow);
+
+    // 这一天太阳走过的整条路线
+    const pathMat = new THREE.LineBasicMaterial({color: 0xfff0c0, transparent: true, opacity: 0.75});
+    let sunPath = new THREE.Line(new THREE.BufferGeometry(), pathMat);
+    scene.add(sunPath);
+
+    /* ---------- 光 ---------- */
+    const sunLight = new THREE.DirectionalLight(0xfff0d4, 2.5);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(2048, 2048);
+    Object.assign(sunLight.shadow.camera,
+      {left: -12, right: 12, top: 12, bottom: -12, near: 1, far: 70});
+    sunLight.shadow.bias = -0.0012;
+    scene.add(sunLight, sunLight.target);
+    const ambient = new THREE.HemisphereLight(0xcfe6ff, 0x4a5d3a, 0.8);
+    scene.add(ambient);
+
+    /* ---------- 地面 ---------- */
     const floor = new THREE.Mesh(
-      new THREE.BoxGeometry(19, 0.4, 7.6),
-      new THREE.MeshStandardMaterial({color: 0x7f9c5f, roughness: 1}));
-    floor.position.y = -0.2;
-    ground.add(floor);
+      new THREE.CircleGeometry(10.5, 64),
+      new THREE.MeshStandardMaterial({color: 0x76965a, roughness: 1}));
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
 
+    // 东南西北：孩子看得见太阳从哪边升起
+    const dirMat = new THREE.MeshBasicMaterial({color: 0xffffff, transparent: true, opacity: 0.25});
+    for (const [x, z] of [[9.4, 0], [-9.4, 0], [0, 9.4], [0, -9.4]]) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.04, 0.2), dirMat);
+      m.position.set(x, 0.03, z);
+      if (Math.abs(z) > 1) m.rotation.y = Math.PI / 2;
+      scene.add(m);
+    }
+
+    /* ---------- 一根杆 + 一个小人（都投真影子）---------- */
+    const POLE_H = 3.0;
     const pole = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.13, 0.15, POLE_H, 14),
-      new THREE.MeshStandardMaterial({color: 0xc9773f, roughness: 0.75}));
-    pole.position.set(0.5, POLE_H / 2, 0);
-    ground.add(pole);
+      new THREE.CylinderGeometry(0.1, 0.12, POLE_H, 14),
+      new THREE.MeshStandardMaterial({color: 0xd08a4a, roughness: 0.7}));
+    pole.position.set(2.1, POLE_H / 2, 2.2);
+    pole.castShadow = true;
+    scene.add(pole);
 
-    const shade = new THREE.Mesh(
-      new THREE.BoxGeometry(1, 0.03, 0.62),
-      new THREE.MeshBasicMaterial({color: 0x121d0c, transparent: true, opacity: 0.88}));
-    shade.position.y = 0.02;
-    shade.position.z = 0;
-    ground.add(shade);
+    /** 小人：比一根杆好懂得多 —— 影子多长，一眼能跟自己比 */
+    function buildPerson() {
+      const g = new THREE.Group();
+      const skin = new THREE.MeshStandardMaterial({color: 0xf0c9a0, roughness: 0.85});
+      const shirt = new THREE.MeshStandardMaterial({color: 0xe4573f, roughness: 0.8});
+      const pants = new THREE.MeshStandardMaterial({color: 0x35548c, roughness: 0.85});
+      const hair = new THREE.MeshStandardMaterial({color: 0x2b2118, roughness: 0.95});
 
-    const sun = new THREE.Mesh(
-      new THREE.SphereGeometry(0.62, 26, 18),
-      new THREE.MeshBasicMaterial({color: 0xffd34d}));
-    ground.add(sun);
-
-    // 太阳在右、影子朝左 —— 左上角留给轨道小图。
-    // 这道淡弧是太阳一年里能走到的高度范围，一眼看出「能高到哪、低到哪」。
-    const SUN_D = 7.4;
-    const arcPts = [];
-    for (let i = 0; i <= 60; i++) {
-      const h = (noonH(355) + (noonH(172) - noonH(355)) * i / 60) * D2R;
-      arcPts.push(new THREE.Vector3(SUN_D * Math.cos(h), SUN_D * Math.sin(h), 0));
+      const add = (mesh, x, y, z) => {mesh.position.set(x, y, z); g.add(mesh); return mesh;};
+      for (const s of [-1, 1]) {
+        add(new THREE.Mesh(new THREE.CapsuleGeometry(0.115, 0.62, 6, 12), pants), s * 0.14, 0.42, 0);
+        add(new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.5, 6, 12), skin), s * 0.31, 1.05, 0);
+      }
+      add(new THREE.Mesh(new THREE.CapsuleGeometry(0.23, 0.44, 6, 14), shirt), 0, 1.06, 0);
+      add(new THREE.Mesh(new THREE.SphereGeometry(0.21, 20, 16), skin), 0, 1.55, 0);
+      const h = add(new THREE.Mesh(new THREE.SphereGeometry(0.225, 20, 16, 0, Math.PI * 2, 0, 1.5), hair), 0, 1.57, 0);
+      h.scale.set(1, 0.85, 1);
+      g.traverse(o => {if (o.isMesh) o.castShadow = true;});
+      return g;
     }
-    ground.add(new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(arcPts),
-      new THREE.LineBasicMaterial({color: 0x4d6c8f, transparent: true, opacity: 0.4})));
+    const person = buildPerson();
+    person.position.set(-0.7, 0, 2.2);
+    scene.add(person);
 
-    // 白天有多长：地面前沿一条昼夜条
-    const BAR_W = 10;
-    const barDay = new THREE.Mesh(
-      new THREE.BoxGeometry(1, 0.08, 0.75),
-      new THREE.MeshBasicMaterial({color: 0xffcf3d}));
-    const barNight = new THREE.Mesh(
-      new THREE.BoxGeometry(1, 0.08, 0.75),
-      new THREE.MeshBasicMaterial({color: 0x1d2f4d}));
-    for (const b of [barDay, barNight]) {b.position.set(0, 0.06, -2.6); ground.add(b);}
-    // 「白天多长」这条给不识字的孩子看：黄的那截就是白天
-
-    /* ============ 轨道图：地球在哪（配角，上方远处）============ */
+    /* ---------- 左上角的轨道小图（HUD 性质，永远画在最上层）---------- */
     const orbit = new THREE.Group();
-    orbit.position.set(-7.2, 9.4, -5);
-    orbit.scale.setScalar(0.27);
+    orbit.position.set(5.4, 7.6, -1);
+    orbit.scale.setScalar(0.135);
     scene.add(orbit);
+    const hud = m => {m.material.depthTest = false; m.renderOrder = 20; return m;};
 
-    const oSun = new THREE.Mesh(
-      new THREE.SphereGeometry(1.7, 30, 20),
-      new THREE.MeshBasicMaterial({color: 0xffd34d}));
-    orbit.add(oSun);
-    orbit.add(new THREE.Mesh(
-      new THREE.SphereGeometry(2.5, 24, 16),
-      new THREE.MeshBasicMaterial({color: 0xffb23d, transparent: true, opacity: 0.28,
-                                   blending: THREE.AdditiveBlending, depthWrite: false})));
-    const oLight = new THREE.PointLight(0xfff2d0, 300, 80, 2);
-    orbit.add(oLight);
+    orbit.add(hud(new THREE.Mesh(
+      new THREE.PlaneGeometry(26, 20),
+      new THREE.MeshBasicMaterial({color: 0x060d1c, transparent: true, opacity: 0.55}))));
+    orbit.add(hud(new THREE.Mesh(
+      new THREE.SphereGeometry(1.5, 24, 16),
+      new THREE.MeshBasicMaterial({color: 0xffd34d}))));
 
-    const R = 9;
-    const ring = [];
-    for (let i = 0; i <= 240; i++) {
-      const N = i / 240 * 365;
+    const R = 9, ring = [];
+    for (let i = 0; i <= 200; i++) {
+      const N = i / 200 * 365;
       const r = R * (1 - ECC * Math.cos(2 * Math.PI * (N - 3) / 365));
-      ring.push(new THREE.Vector3(r * Math.cos(theta(N)), 0, r * Math.sin(theta(N))));
+      ring.push(new THREE.Vector3(r * Math.cos(theta(N)), r * Math.sin(theta(N)) * 0.42, 0));
     }
-    orbit.add(new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(ring),
-      new THREE.LineBasicMaterial({color: 0x5c81ad})));
+    const oRing = new THREE.Line(new THREE.BufferGeometry().setFromPoints(ring),
+      new THREE.LineBasicMaterial({color: 0x6f97c4, transparent: true, opacity: 0.9}));
+    oRing.material.depthTest = false; oRing.renderOrder = 20;
+    orbit.add(oRing);
 
-    const earth = new THREE.Group();
-    earth.add(new THREE.Mesh(
-      new THREE.SphereGeometry(1.15, 34, 24),
-      new THREE.MeshStandardMaterial({color: 0x3f86c4, roughness: 0.75})));
-    for (const sgn of [1, -1]) {
-      earth.add(new THREE.Mesh(
-        new THREE.SphereGeometry(1.16, 26, 10, 0, Math.PI * 2,
-          sgn > 0 ? 0 : Math.PI * 0.86, Math.PI * 0.14),
-        new THREE.MeshStandardMaterial({color: 0xf2f7fb, roughness: 0.9})));
+    const oEarth = new THREE.Group();
+    oEarth.add(hud(new THREE.Mesh(new THREE.SphereGeometry(1.05, 24, 18),
+      new THREE.MeshBasicMaterial({color: 0x4a94d0}))));
+    oEarth.add(hud(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.2, 8),
+      new THREE.MeshBasicMaterial({color: 0xff6b5b}))));
+    oEarth.rotation.z = -TILT * D2R;      // 地轴朝向固定 —— 四季的全部原因
+    orbit.add(oEarth);
+
+    /* ============ 世界 = f(第几天, 几点) ============ */
+    const C = {
+      dayTop: new THREE.Color(0x2b6cb0), dayBot: new THREE.Color(0xbcdcf2),
+      duskTop: new THREE.Color(0x24365f), duskBot: new THREE.Color(0xe4823f),
+      nightTop: new THREE.Color(0x040812), nightBot: new THREE.Color(0x0e1830),
+    };
+    const tmpA = new THREE.Color(), tmpB = new THREE.Color();
+    let curDay = -1;      // 故意设成不可能的值，保证第一帧就把轨迹线建出来
+
+    function rebuildPath(N) {
+      const pts = [];
+      for (let i = 0; i <= 240; i++) {
+        const v = sunVec(N, i / 240 * 24);
+        if (v.u > -0.01) pts.push(new THREE.Vector3(v.e * SKY_R, v.u * SKY_R, -v.n * SKY_R));
+      }
+      sunPath.geometry.dispose();
+      sunPath.geometry = new THREE.BufferGeometry().setFromPoints(pts);
     }
-    const eq = new THREE.Mesh(
-      new THREE.TorusGeometry(1.17, 0.022, 8, 56),
-      new THREE.MeshBasicMaterial({color: 0xffe08a}));
-    eq.rotation.x = Math.PI / 2;
-    earth.add(eq);
-    earth.add(new THREE.Mesh(
-      new THREE.CylinderGeometry(0.045, 0.045, 3.6, 10),
-      new THREE.MeshBasicMaterial({color: 0xff6b5b})));
-    const pin = new THREE.Mesh(
-      new THREE.SphereGeometry(0.16, 12, 10),
-      new THREE.MeshBasicMaterial({color: 0xff3b30}));
-    pin.position.set(0, 1.15 * Math.sin(LAT * D2R), 1.15 * Math.cos(LAT * D2R));
-    earth.add(pin);
-    // 地轴朝向在空间里是固定的（永远指着北极星）—— 这是四季的全部原因
-    earth.rotation.z = -TILT * D2R;
-    orbit.add(earth);
 
-    /* ============ 世界 = f(第几天) ============ */
-    let day = 172;
+    function render({day, hour}) {
+      if (day !== curDay) {curDay = day; rebuildPath(day);}
 
-    function render(N) {
-      day = N;
-      const h = noonH(N);
-      const L = shadow(N);
-      const hours = dayLen(N);
+      const v = sunVec(day, hour);
+      const alt = altOf(v);
+      const up = v.u > 0;
 
-      // 影子：长度 = 杆高 / tan(太阳高度)，朝太阳的反方向
-      shade.scale.x = L;
-      shade.position.x = 0.5 - L / 2;
+      // 太阳的位置（地平坐标系 → 世界：x 东、y 天顶、z 南）
+      sunBall.position.set(v.e * SKY_R, v.u * SKY_R, -v.n * SKY_R);
+      sunGlow.position.copy(sunBall.position);
+      sunBall.visible = sunGlow.visible = v.u > -0.06;
+      // 快落山时又大又红，跟真的一样
+      const low = Math.max(0, 1 - Math.max(0, alt) / 12);
+      sunGlow.scale.setScalar(7 + low * 5.5);
+      sunBall.material.color.setHex(low > 0.5 ? 0xff9a4d : 0xfff3c4);
 
-      // 正午太阳的位置
-      const rad = h * D2R;
-      sun.position.set(SUN_D * Math.cos(rad), SUN_D * Math.sin(rad), 0);
+      // 平行光摆到太阳方向上 —— 影子是 Three.js 真投出来的，不是画的
+      sunLight.position.set(v.e * 42, Math.max(0.02, v.u) * 42, -v.n * 42);
+      sunLight.intensity = up ? 0.5 + 2.3 * Math.min(1, v.u * 2.2) : 0;
+      sunLight.castShadow = up && v.u > 0.05;
 
-      // 昼夜条：黄的那截就是白天占一天的比例
-      const dw = BAR_W * hours / 24;
-      barDay.scale.x = dw;
-      barDay.position.set(-BAR_W / 2 + dw / 2, 0.06, -2.6);
-      barNight.scale.x = BAR_W - dw;
-      barNight.position.set(BAR_W / 2 - (BAR_W - dw) / 2, 0.06, -2.6);
+      // 天色：白天蓝、擦黑橙、夜里深蓝。这一段是「真实感」里最值钱的
+      const k = Math.max(0, Math.min(1, (alt + 6) / 14));        // −6°→0，8°→1
+      const night = Math.max(0, Math.min(1, -alt / 10));
+      tmpA.copy(C.nightTop).lerp(C.duskTop, 1 - night).lerp(C.dayTop, Math.max(0, k * 2 - 1));
+      tmpB.copy(C.nightBot).lerp(C.duskBot, 1 - night).lerp(C.dayBot, Math.max(0, k * 2 - 1));
+      skyUni.top.value.copy(tmpA);
+      skyUni.bottom.value.copy(tmpB);
+      starMat.uniforms.alpha.value = night;
+      ambient.intensity = 0.16 + 0.75 * k;
+      floor.material.color.setHex(0x76965a).multiplyScalar(0.24 + 0.76 * k);
 
-      // 地球在轨道上的位置（含真实偏心率）
-      const r = R * (1 - ECC * Math.cos(2 * Math.PI * (N - 3) / 365));
-      earth.position.set(r * Math.cos(theta(N)), 0, r * Math.sin(theta(N)));
+      // 轨道小图里的地球
+      const r = R * (1 - ECC * Math.cos(2 * Math.PI * (day - 3) / 365));
+      oEarth.position.set(r * Math.cos(theta(day)), r * Math.sin(theta(day)) * 0.42, 0);
 
-      // 顶上的字
-      const si = seasonIdx(N);
-      ui.headline(`${SEASON_EMOJI[si]} ${monthOf(N)}月${dayInMonth(N)}日 · ${SEASON_CN[si]}`);
+      // 读数
+      const si = seasonIdx(day);
+      // 前面这个表情说的是「现在天亮还是天黑」，季节看后面的字
+      const sky = alt > 6 ? '☀️' : alt > -1 ? '🌇' : '🌙';
+      ui.headline(`${sky} ${monthOf(day)}月${dayInMonth(day)}日 ${clock(hour)} · ${SEASON_CN[si]}${SEASON_EMOJI[si]}`);
+      const sr = shadowRatio(v);
       ui.facts([
-        {label: '中午太阳高', value: h.toFixed(0) + '°'},
-        {label: '影子长', value: (L / POLE_H).toFixed(1) + ' 个杆'},
-        {label: '白天', value: hours.toFixed(1) + ' 小时'},
-        {label: '离太阳', value: (distOf(N) * 10000).toFixed(0) + ' 万公里'},
+        {label: '太阳高', value: up ? alt.toFixed(0) + '°' : '在地平线下', dim: !up},
+        {label: '影子长', value: up ? (sr > 12 ? '长得看不到头' : sr.toFixed(1) + ' 个人') : '天黑了', dim: !up},
+        {label: '今天白天', value: dayLen(day).toFixed(1) + ' 小时'},
+        {label: '离太阳', value: (distOf(day) * 10000).toFixed(0) + ' 万公里'},
       ]);
     }
 
-    // 地球自转一点点，画面不至于死板；不影响任何读数
-    ctx.onFrame((dt, t) => {earth.rotation.y = t * 0.35;});
+    ctx.onFrame((dt, t) => {oEarth.rotation.y = t * 0.5;});
 
-    ui.mountToy({min: 1, max: 365, value: day, onInput: render});
+    const SEASON_TRACK =
+      'linear-gradient(90deg,#5b86b8 0%,#7fb069 22%,#e8a33d 47%,#c9743a 72%,#5b86b8 100%)';
+    const DAY_TRACK =
+      'linear-gradient(90deg,#0d1424 0%,#22304e 16%,#e08a45 26%,#8ec9ea 50%,#e08a45 74%,#22304e 84%,#0d1424 100%)';
+
+    const mount = () => ui.mountToy({
+      sliders: [
+        {key: 'day', icon: '📅', min: 1, max: 365, step: 1, value: 172, track: SEASON_TRACK,
+         fmt: N => `${monthOf(N)}月${dayInMonth(N)}日`},
+        {key: 'hour', icon: '🕛', min: 0, max: 24, step: 0.05, value: 12, track: DAY_TRACK,
+         fmt: clock},
+      ],
+      onInput: render,
+    });
+    mount();
 
     function reset() {
-      camera.position.set(...this.stage.cameraPos);
-      controls.target.set(...this.stage.target);
-      ui.mountToy({min: 1, max: 365, value: 172, onInput: render});
+      camera.position.set(0, 3.4, -15.5);
+      controls.target.set(0, 4.6, 1.6);
+      mount();
     }
 
-    return {reset: reset.bind(this)};
+    return {reset};
   },
 };

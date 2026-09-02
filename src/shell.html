@@ -185,30 +185,31 @@ button.b.dim{opacity:.42}
 
 /* ---------- 玩具模式：孩子拖滑块，世界连续响应 ---------- */
 #toy{position:fixed;left:0;right:0;bottom:0;z-index:6;display:none;
-  padding:26px 22px calc(20px + env(safe-area-inset-bottom));
-  background:linear-gradient(to top,rgba(6,13,28,.96) 0%,rgba(6,13,28,.92) 55%,rgba(6,13,28,0) 100%)}
+  padding:22px 22px calc(16px + env(safe-area-inset-bottom));
+  background:linear-gradient(to top,rgba(6,13,28,.96) 0%,rgba(6,13,28,.92) 62%,rgba(6,13,28,0) 100%)}
 #toy.on{display:block}
 #toyHead{text-align:center;color:#fff;font-size:27px;font-weight:750;letter-spacing:.02em;
   margin-bottom:4px;text-shadow:0 2px 16px rgba(0,0,0,.8)}
 #toyFacts{display:flex;gap:24px;justify-content:center;flex-wrap:wrap;
-  color:#9fbcd8;font-size:14.5px;margin-bottom:12px;min-height:22px}
+  color:#9fbcd8;font-size:14.5px;margin-bottom:10px;min-height:22px}
 #toyFacts b{color:#fff;font-weight:750;font-size:16.5px;font-variant-numeric:tabular-nums;margin-left:6px}
-/* 一年四季的颜色铺在轨道上，拖到哪一段一眼看得出 */
-#slider{-webkit-appearance:none;appearance:none;width:100%;height:46px;background:none;
-  display:block;cursor:grab}
-#slider:active{cursor:grabbing}
-#slider::-webkit-slider-runnable-track{height:16px;border-radius:8px;
-  background:linear-gradient(90deg,#5b86b8 0%,#7fb069 22%,#e8a33d 47%,#c9743a 72%,#5b86b8 100%)}
-#slider::-moz-range-track{height:16px;border-radius:8px;
-  background:linear-gradient(90deg,#5b86b8 0%,#7fb069 22%,#e8a33d 47%,#c9743a 72%,#5b86b8 100%)}
-#slider::-webkit-slider-thumb{-webkit-appearance:none;width:42px;height:42px;border-radius:50%;
-  background:#fff;border:4px solid #2e6f9e;margin-top:-13px;
-  box-shadow:0 4px 16px rgba(0,0,0,.45);transition:transform .12s}
-#slider:active::-webkit-slider-thumb{transform:scale(1.12)}
-#slider::-moz-range-thumb{width:42px;height:42px;border-radius:50%;background:#fff;
-  border:4px solid #2e6f9e;box-shadow:0 4px 16px rgba(0,0,0,.45)}
-#toyTicks{display:flex;justify-content:space-between;color:#7f9fbe;font-size:12.5px;
-  padding:0 4px;margin-top:-2px}
+#toyFacts .dim{opacity:.45}
+
+.srow{display:flex;align-items:center;gap:12px;margin-top:2px}
+.srow .si{font-size:19px;width:26px;text-align:center;flex:none;line-height:1}
+.srow .sv{color:#cfe2f2;font-size:14px;font-weight:650;min-width:5.4em;text-align:right;
+  flex:none;font-variant-numeric:tabular-nums}
+.sld{-webkit-appearance:none;appearance:none;flex:1;min-width:0;height:40px;
+  background:none;display:block;cursor:grab}
+.sld:active{cursor:grabbing}
+.sld::-webkit-slider-runnable-track{height:14px;border-radius:7px;background:var(--trk)}
+.sld::-moz-range-track{height:14px;border-radius:7px;background:var(--trk)}
+.sld::-webkit-slider-thumb{-webkit-appearance:none;width:34px;height:34px;border-radius:50%;
+  background:#fff;border:4px solid #2e6f9e;margin-top:-10px;
+  box-shadow:0 4px 14px rgba(0,0,0,.5);transition:transform .12s}
+.sld:active::-webkit-slider-thumb{transform:scale(1.14)}
+.sld::-moz-range-thumb{width:34px;height:34px;border-radius:50%;background:#fff;
+  border:4px solid #2e6f9e;box-shadow:0 4px 14px rgba(0,0,0,.5)}
 
 /* ---------- 手机 / 平板 ---------- */
 @media(max-width:860px){
@@ -221,8 +222,11 @@ button.b.dim{opacity:.42}
   .oi{font-size:32px}
   #judge b{font-size:26px}
   .hwrap h1{font-size:27px} .hi{font-size:48px} .hn{font-size:19px}
-  #toyHead{font-size:21px} #toyFacts{gap:14px;font-size:13px}
-  #toy{padding:10px 14px calc(14px + env(safe-area-inset-bottom))}
+  #toyHead{font-size:20px} #toyFacts{gap:12px;font-size:12.5px;margin-bottom:6px}
+  #toyFacts b{font-size:14.5px}
+  #toy{padding:14px 12px calc(10px + env(safe-area-inset-bottom))}
+  .srow{gap:8px} .srow .sv{font-size:12.5px;min-width:4.6em} .srow .si{font-size:16px;width:20px}
+  .sld{height:34px}
 }
 @media(max-width:520px){
   .brand span{display:none}
@@ -257,8 +261,7 @@ button.b.dim{opacity:.42}
   <div id="toy">
   <div id="toyHead"></div>
   <div id="toyFacts"></div>
-  <input id="slider" type="range" min="1" max="365" value="172" step="1">
-  <div id="toyTicks"><span>1月</span><span>4月</span><span>7月</span><span>10月</span><span>12月</span></div>
+  <div id="toySliders"></div>
 </div>
 
 <div class="steps" id="steps"></div>
