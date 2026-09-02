@@ -14,7 +14,9 @@
 import { readFileSync } from 'node:fs';
 import { SCENES } from './src/scenes/index.js';
 import { lintFlow, lintKernel } from './flow-lint.mjs';
-import { PHYS } from './src/scenes/seasons.js';
+import * as SeasonsMod from './src/scenes/seasons.js';
+const PHYS = SeasonsMod.PHYS;
+const MODS = {seasons: SeasonsMod};
 
 const fails = [];
 const warns = [];
@@ -29,8 +31,10 @@ for (const s of SCENES) {
   for (const k of REQUIRED) {
     if (s[k] === undefined || s[k] === null) fail(who, `缺少必填字段 ${k}`);
   }
-  if (!s.flow && !s.steps) fail(who, '既没有 flow 也没有 steps');
-  if (stepsOf(s).length < 2) fail(who, '步骤少于 2 步');
+  if (!s.toy) {
+    if (!s.flow && !s.steps) fail(who, '既没有 flow 也没有 steps');
+    if (stepsOf(s).length < 2) fail(who, '步骤少于 2 步');
+  }
   if (Array.isArray(s.keywords) && !s.keywords.length) fail(who, 'keywords 为空');
   if (typeof s.build !== 'function') fail(who, 'build 不是函数');
 }
@@ -56,7 +60,7 @@ for (const s of SCENES) {
 /* ---------- 规则 4：每节课至少要有一个「先猜再看」和一个结论 ---------- */
 /* 这是教学法底线：没有预测点，学生就只是在看动画。 */
 for (const s of SCENES) {
-  if (s.flow) continue;                       // flow 场景由下面的规则 7 统一验
+  if (s.flow || s.toy) continue;              // flow 走规则 7，玩具走规则 4b
   const src = readFileSync(new URL(`./src/scenes/${s.id}.js`, import.meta.url), 'utf8');
   const asks = (src.match(/ui\.ask\(/g) || []).length;
   const result = (src.match(/ui\.showResult\(/g) || []).length;
@@ -67,6 +71,59 @@ for (const s of SCENES) {
       ? warn(s.id, '没有预测点（ui.ask），学生全程只是在看')
       : fail(s.id, '没有预测点（ui.ask）—— 学生没有先猜的机会，等于看动画');
   }
+}
+
+/* ---------- 规则 4b：孩子有没有掌控权 ----------
+ *
+ * 这一条是补的，补之前的一个真实盲区：四季那一课把上面所有规则都跑绿了，
+ * 玩起来却是「59% 的时间在念旁白、平均 40 秒才轮到孩子点一下、8 次弹窗挡住画面」。
+ * 机器只会判我教给它的东西 —— 而「孩子有没有在开车」这件事，我一条都没教。
+ */
+for (const s of SCENES) {
+  const src = readFileSync(new URL(`./src/scenes/${s.id}.js`, import.meta.url), 'utf8');
+
+  if (s.toy) {
+    if (!/ui\.mountToy\(/.test(src))
+      fail(s.id, '声明了 toy 却没有挂控件（ui.mountToy）—— 孩子没有能拖的东西');
+    // 光挂个滑块不够，得验参数是不是真的驱动了世界。
+    // 拖一整年，每个物理量都必须明显变化，否则滑块就是个装饰。
+    const P = MODS[s.id]?.PHYS;
+    if (!P) {
+      warn(s.id, '玩具场景没有导出 PHYS —— 没法验证滑块是不是真的驱动了世界');
+    } else {
+      for (const [k, fn] of Object.entries(P)) {
+        if (typeof fn !== 'function' || k === 'dayOf') continue;
+        let lo = Infinity, hi = -Infinity;
+        for (let N = 1; N <= 365; N++) {
+          const v = fn(N);
+          if (!Number.isFinite(v)) {fail(s.id, `${k}(${N}) 算出了 ${v}`); break;}
+          lo = Math.min(lo, v); hi = Math.max(hi, v);
+        }
+        const span = Math.abs(hi - lo) / Math.max(1e-9, Math.abs(hi) + Math.abs(lo));
+        if (span < 0.01)
+          fail(s.id, `${k} 一整年几乎不变（${lo.toFixed(3)}→${hi.toFixed(3)}）—— 拖滑块看不出区别`);
+      }
+    }
+    continue;
+  }
+
+  if (!s.flow) continue;
+
+  /*
+   * 脚本模式量「啰嗦」。
+   * 先试过按时长算，没用 —— 那份让人难受的编排算出来平均 23 秒一次互动，
+   * 卡在阈值下面刚好放行，因为动画时长静态算不出来。
+   * 改成数条数：一次互动摊到几条旁白。这个和体感对得上，也不用猜动画多长。
+   */
+  const ins = [...s.flow.steps, ...(s.flow.deeper || [])].flatMap(x => x.do);
+  const says = ins.filter(i => i.say !== undefined).length;
+  const asks = ins.filter(i => i.ask !== undefined).length;
+  const hands = asks + [...new Set(ins.filter(i => i.act).map(i => i.act))]
+    .filter(a => new RegExp(`${a}\\.interactive\\s*=\\s*true`).test(src)).length;
+  if (!hands) continue;                          // 完全没互动的由规则 7 拦
+  const ratio = says / hands;
+  if (ratio > 3)
+    warn(s.id, `平均一次互动要听 ${ratio.toFixed(1)} 段旁白（${says} 段旁白 / ${hands} 次互动）—— 孩子在当听众`);
 }
 
 /* ---------- 规则 5：声明了几步，就得有几步真的走到 ---------- */
@@ -103,7 +160,8 @@ for (const s of SCENES) {
 /* 四季：这一课全部的内容就是这几个公式，错了就是在教错东西 */
 {
   const P = PHYS, near = (a, b, eps) => Math.abs(a - b) < eps;
-  const S = 6, W = 12;                                  // 北半球夏 / 冬
+  // 公式都按「第几天」算，这里显式换算 —— 直接传月份会算出假数据且不报错
+  const S = P.dayOf(6), W = P.dayOf(12);                 // 北半球夏 / 冬
 
   // 夏至昼长 + 冬至昼长 必须正好是 24 小时（同一纬度上互补）
   const sum = P.dayLen(S) + P.dayLen(W);
@@ -116,9 +174,9 @@ for (const s of SCENES) {
   }
 
   // 太阳高度角必须落在 0–90°
-  for (let m = 1; m <= 12; m++) {
-    const h = P.noonH(m);
-    if (h <= 0 || h > 90) fail('seasons', `${m} 月正午太阳高度 ${h.toFixed(1)}°，超出 0–90°`);
+  for (let N = 1; N <= 365; N++) {
+    const h = P.noonH(N);
+    if (h <= 0 || h > 90) fail('seasons', `第 ${N} 天正午太阳高度 ${h.toFixed(1)}°，超出 0–90°`);
   }
 
   // 这一课的引爆点：北半球夏天，地球反而离太阳更远。反了就整课白讲

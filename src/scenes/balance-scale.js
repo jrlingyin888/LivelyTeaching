@@ -481,6 +481,9 @@ export default {
     // 这两个要等孩子自己操作，可能等很久 —— 告诉 runner 别当成卡住
     measureAll.patient = true;
     sortByWeight.patient = true;
+    // 这两个是**孩子在动手**，不是动画 —— 算「互动机会」时要数进去
+    measureAll.interactive = true;
+    sortByWeight.interactive = true;
 
     return {actions: {weigh, measureAll, sortByWeight}, reset};
   },

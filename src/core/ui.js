@@ -22,6 +22,7 @@ export function createUI() {
     steps: $('steps'), actions: $('actions'), toast: $('toast'),
     result: $('result'), home: $('home'), homeGrid: $('homeGrid'),
     say: $('say'), ask: $('ask'), judge: $('judge'), tally: $('tally'),
+    toy: $('toy'), toyHead: $('toyHead'), toyFacts: $('toyFacts'), slider: $('slider'),
     btnHome: $('btnHome'), btnVoice: $('btnVoice'),
   };
   let statRefs = {}, stepEls = [], toastT, sayT, judgeT;
@@ -53,6 +54,7 @@ export function createUI() {
     shutUp();
     clearSay(); hideResult(); el.ask.classList.remove('show');
     el.tally.innerHTML = ''; el.actions.innerHTML = ''; el.steps.innerHTML = '';
+    unmountToy();
     el.hud.style.display = 'none';
     el.home.style.display = 'grid';
     requestAnimationFrame(() => el.home.classList.remove('hide'));
@@ -204,6 +206,36 @@ export function createUI() {
       `<span class="tn">${r.count}</span></div>`).join('');
   }
 
+  /* ================= 玩具模式 ================= */
+  /*
+   * 脚本模式里时间是脚本的，孩子只能等；玩具模式里时间是孩子的。
+   * 世界是「参数的函数」，滑块就是那个参数 —— 所以天然能回退：拖回去就行。
+   */
+  function mountToy({min, max, value, onInput}) {
+    el.toy.classList.add('on');
+    Object.assign(el.slider, {min, max, value});
+    const fire = () => onInput(Number(el.slider.value));
+    el.slider.oninput = fire;
+    // 键盘左右键也能拖（大人用得上），滚轮同理
+    el.slider.onwheel = e => {
+      e.preventDefault();
+      el.slider.value = Number(el.slider.value) + (e.deltaY > 0 ? 2 : -2);
+      fire();
+    };
+    fire();
+  }
+  const unmountToy = () => {
+    el.toy.classList.remove('on');
+    el.slider.oninput = el.slider.onwheel = null;
+    el.toyHead.textContent = ''; el.toyFacts.innerHTML = '';
+  };
+  const headline = t => {el.toyHead.textContent = t;};
+  /** 一行轻量读数。不做成面板 —— 面板会让它看起来像个仪表盘 */
+  const facts = rows => {
+    el.toyFacts.innerHTML = (rows || [])
+      .map(r => `<span>${r.label}<b>${r.value}</b></span>`).join('');
+  };
+
   /* ================= 步骤 ================= */
   const setStep = n => stepEls.forEach((e, i) => {
     e.classList.toggle('active', i === n);
@@ -271,6 +303,7 @@ export function createUI() {
   return {
     mount, setActions, focusAction,
     say: sayBig, clearSay, ask, judge, tally, setStep, addSteps,
+    mountToy, unmountToy, headline, facts,
     setStat, setProgress, setHint, toast,
     showResult, hideResult,
     showHome, backHome,

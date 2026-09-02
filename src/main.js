@@ -58,6 +58,9 @@ function launch(meta) {
     ui: scopedUI(alive),
   });
 
+  // 玩具模式：没有脚本，孩子拖参数，世界跟着变。build() 里自己挂好了滑块。
+  if (meta.toy) return;
+
   // 声明了 flow 的场景：编排交给解释器跑，内核只提供动作
   if (meta.flow) {
     let runner = null;
