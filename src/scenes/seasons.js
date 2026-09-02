@@ -71,6 +71,25 @@ export const PHYS = {
 };
 
 /* ===================== 贴图小工具 ===================== */
+/** 一块地上的字（东/南/西/北）。没标注的白杠会被当成不明痕迹 */
+function labelSprite(text) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.font = '700 84px -apple-system,"PingFang SC",sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = 'rgba(255,255,255,.72)';
+  g.fillText(text, 64, 68);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: t, transparent: true, depthWrite: false, opacity: 0.85}));
+  sp.scale.setScalar(1.5);
+  return sp;
+}
+
+
 /** 一张径向渐变，用来做太阳的光晕。比上一整套后期便宜太多，效果也够 */
 function glowTexture() {
   const c = document.createElement('canvas');
@@ -103,7 +122,7 @@ export default {
 
   // 面朝正南：太阳从左边（东）升起，正前方（南）最高，右边（西）落下
   stage: {cameraPos: [0, 3.4, -15.5], target: [0, 4.6, 1.6], withWater: false,
-          withGround: false, sky: 0x0a1428},
+          withGround: false, withLights: false, sky: 0x0a1428},
 
   build(ctx) {
     const {scene, ui, camera, controls} = ctx;
@@ -187,13 +206,13 @@ export default {
     floor.receiveShadow = true;
     scene.add(floor);
 
-    // 东南西北：孩子看得见太阳从哪边升起
-    const dirMat = new THREE.MeshBasicMaterial({color: 0xffffff, transparent: true, opacity: 0.25});
-    for (const [x, z] of [[9.4, 0], [-9.4, 0], [0, 9.4], [0, -9.4]]) {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.04, 0.2), dirMat);
-      m.position.set(x, 0.03, z);
-      if (Math.abs(z) > 1) m.rotation.y = Math.PI / 2;
-      scene.add(m);
+    // 只标东和西 —— 这两个才是要紧的（太阳从东边升、西边落）。
+    // 南北标了会正好糊在小人脑袋边上，反而添乱。
+    // 面朝正南，所以东在画面左边、西在右边。
+    for (const [cn, x] of [['东', 9.4], ['西', -9.4]]) {
+      const sp = labelSprite(cn);
+      sp.position.set(x, 0.55, 0);
+      scene.add(sp);
     }
 
     /* ---------- 一根杆 + 一个小人（都投真影子）---------- */
@@ -231,8 +250,8 @@ export default {
 
     /* ---------- 左上角的轨道小图（HUD 性质，永远画在最上层）---------- */
     const orbit = new THREE.Group();
-    orbit.position.set(5.4, 7.6, -1);
-    orbit.scale.setScalar(0.135);
+    orbit.position.set(5.0, 7.4, -1);
+    orbit.scale.setScalar(0.235);
     scene.add(orbit);
     const hud = m => {m.material.depthTest = false; m.renderOrder = 20; return m;};
 

@@ -15,6 +15,7 @@ export function createStage(container, opts = {}) {
     withWater = true,
     withGround = false,
     groundColor = 0x9fbf7a,
+    withLights = true,
   } = opts;
 
   const renderer = new THREE.WebGLRenderer({antialias: true});
@@ -41,16 +42,21 @@ export function createStage(container, opts = {}) {
   controls.maxDistance = 34;
   controls.maxPolarAngle = Math.PI * 0.495;
 
-  scene.add(new THREE.HemisphereLight(0xdff0ff, 0x6d7f66, 1.05));
-  const sun = new THREE.DirectionalLight(0xfff3e0, 1.9);
-  sun.position.set(9, 13, 7);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = 48;
-  Object.assign(sun.shadow.camera, {left: -16, right: 16, top: 14, bottom: -12});
-  sun.shadow.bias = -0.0008;
-  scene.add(sun);
+  // 默认给一盏固定的太阳。自己要管光照的场景（比如四季要让太阳一天里走位）
+  // 必须传 withLights:false 关掉它 —— 否则场上会有两盏投影灯，
+  // 每个物体拖出两个影子，其中一个永远不动。
+  if (withLights) {
+    scene.add(new THREE.HemisphereLight(0xdff0ff, 0x6d7f66, 1.05));
+    const sun = new THREE.DirectionalLight(0xfff3e0, 1.9);
+    sun.position.set(9, 13, 7);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 48;
+    Object.assign(sun.shadow.camera, {left: -16, right: 16, top: 14, bottom: -12});
+    sun.shadow.bias = -0.0008;
+    scene.add(sun);
+  }
 
   // ---- 水面（y = 0 为水平面）----
   let waterGeo = null, waterBase = null;
