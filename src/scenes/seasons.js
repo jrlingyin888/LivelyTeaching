@@ -121,7 +121,7 @@ export default {
   toy: true,
 
   // 面朝正南：太阳从左边（东）升起，正前方（南）最高，右边（西）落下
-  stage: {cameraPos: [0, 3.4, -15.5], target: [0, 4.6, 1.6], withWater: false,
+  stage: {cameraPos: [0, 3.8, -15.5], target: [0, 5.3, 1.6], withWater: false,
           withGround: false, withLights: false, sky: 0x0a1428},
 
   build(ctx) {
@@ -250,13 +250,32 @@ export default {
 
     /* ---------- 左上角的轨道小图（HUD 性质，永远画在最上层）---------- */
     const orbit = new THREE.Group();
-    orbit.position.set(5.0, 7.4, -1);
-    orbit.scale.setScalar(0.235);
+    orbit.position.set(0, 8.7, -1);
+
+    /*
+     * 轨道小图贴着画面左边缘放（面朝正南，+x 是东，也就是屏幕左边）。
+     * 位置得按视口现算 —— 写死的话，竖屏会被切掉一半，宽屏又离边太远。
+     * 窄屏还要自动缩一点，否则挤不下。
+     */
+    const ORBIT_W = 23;               // 底衬宽度（本地单位）
+    const _dir = new THREE.Vector3(), _rel = new THREE.Vector3();
+    function placeOrbit() {
+      // 视锥的半宽要按**沿视线的深度**算。用到相机的直线距离会偏大，
+      // 偏离中心越远越离谱，结果就是被推出画面。
+      camera.getWorldDirection(_dir);
+      _rel.subVectors(orbit.position, camera.position);
+      const depth = Math.max(1, _rel.dot(_dir));
+      const halfW = Math.tan(camera.fov / 2 * D2R) * depth * camera.aspect;
+      const sc = Math.min(0.235, (halfW - 0.5) * 1.8 / ORBIT_W);
+      orbit.scale.setScalar(sc);
+      orbit.position.x = halfW - ORBIT_W * sc / 2 - 0.45;
+    }
+    placeOrbit();
     scene.add(orbit);
     const hud = m => {m.material.depthTest = false; m.renderOrder = 20; return m;};
 
     orbit.add(hud(new THREE.Mesh(
-      new THREE.PlaneGeometry(26, 20),
+      new THREE.PlaneGeometry(23, 11),
       new THREE.MeshBasicMaterial({color: 0x060d1c, transparent: true, opacity: 0.55}))));
     orbit.add(hud(new THREE.Mesh(
       new THREE.SphereGeometry(1.5, 24, 16),
@@ -350,7 +369,7 @@ export default {
       ]);
     }
 
-    ctx.onFrame((dt, t) => {oEarth.rotation.y = t * 0.5;});
+    ctx.onFrame((dt, t) => {oEarth.rotation.y = t * 0.5; placeOrbit();});
 
     const SEASON_TRACK =
       'linear-gradient(90deg,#5b86b8 0%,#7fb069 22%,#e8a33d 47%,#c9743a 72%,#5b86b8 100%)';
@@ -369,8 +388,8 @@ export default {
     mount();
 
     function reset() {
-      camera.position.set(0, 3.4, -15.5);
-      controls.target.set(0, 4.6, 1.6);
+      camera.position.set(0, 3.8, -15.5);
+      controls.target.set(0, 5.3, 1.6);
       mount();
     }
 
