@@ -308,6 +308,20 @@ export default {
       new THREE.SphereGeometry(1.05, 26, 20),
       new THREE.MeshBasicMaterial({color: 0x5aa3dd})));
 
+    /*
+     * 一条竖直参照线（轨道面的法线方向）。
+     * 光给一根斜杆，看不出「斜了多少」—— 透视还会把屏幕上的视角
+     * 放大到 28°~33°（模型里是精确的 23.44°）。
+     * 有了这条参照，倾斜就变成了可以直接对比的东西，不用去量角度。
+     */
+    const oUp = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(
+        [new THREE.Vector3(0, -1.8, 0), new THREE.Vector3(0, 1.8, 0)]),
+      new THREE.LineDashedMaterial({color: 0xffffff, transparent: true, opacity: 0.4,
+                                    dashSize: 0.22, gapSize: 0.18}));
+    oUp.computeLineDistances();
+    oEarth.add(oUp);
+
     const oTilt = new THREE.Group();
     oTilt.rotation.z = -TILT * D2R;
     oTilt.add(new THREE.Mesh(
