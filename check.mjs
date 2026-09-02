@@ -186,6 +186,25 @@ for (const s of SCENES) {
   if (!(P.distOf(S) > P.distOf(W)))
     fail('seasons', '算出来夏天离太阳更近 —— 这一课的核心事实反了');
 
+  /*
+   * 地轴必须是从轨道平面里**竖出来**的，不能躺在平面内。
+   * 判据：北极方向 · 指向太阳，两分点必须为 0（垂直），两至点为 ±sin(23.44°)。
+   * 这条来自一次真实返工 —— 当初把轨道画成扁椭圆、地轴塞在同一平面里，
+   * 两至点碰巧看着对，两分点却算出 156° 和 30°（都该是 90°），
+   * 而那张图只有十几像素宽，肉眼根本看不出来。
+   */
+  for (const [名, m] of [['春分', 3], ['秋分', 9]]) {
+    const d = P.poleDotSun(P.dayOf(m));
+    if (Math.abs(d) > 0.08)
+      fail('seasons', `${名}时地轴与日照方向的夹角是 ${(Math.acos(d) * 180 / Math.PI).toFixed(0)}°，应为 90° —— 地轴八成被放进轨道平面里了`);
+  }
+  {
+    const want = Math.sin(P.TILT * Math.PI / 180);
+    const ds = P.poleDotSun(P.dayOf(6)), dw = P.poleDotSun(P.dayOf(12));
+    if (Math.abs(ds - want) > 0.03) fail('seasons', `夏至北极朝太阳的分量 ${ds.toFixed(3)}，应为 ${want.toFixed(3)}`);
+    if (Math.abs(dw + want) > 0.03) fail('seasons', `冬至北极背太阳的分量 ${dw.toFixed(3)}，应为 ${(-want).toFixed(3)}`);
+  }
+
   // 角度的影响必须远大于距离，否则「不是远近，是角度」这个结论就不成立。
   // 比的是两个效应各自偏离 1 的幅度：角度 +113%，距离 −6.5%，差着一个数量级。
   const byAngle = P.fluxOf(S) / P.fluxOf(W);

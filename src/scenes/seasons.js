@@ -57,7 +57,23 @@ const SEASON_EMOJI = ['❄️', '🌸', '☀️', '🍂'];
 const seasonIdx = N => {const m = monthOf(N); return m <= 2 || m === 12 ? 0 : m <= 5 ? 1 : m <= 8 ? 2 : 3;};
 const clock = h => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`;
 
+/**
+ * 北极方向 · 指向太阳方向，两个单位向量的点积。
+ * 这一条锁的是「地轴不在轨道平面里」这个几何事实：
+ *   两分点必须是 0（垂直），两至点是 ±sin(23.44°)=±0.398
+ * 我曾经把轨道画成 XY 平面上的扁椭圆、地轴也塞在同一平面里，
+ * 两至点碰巧看着对，两分点却算出 156° 和 30°（都该是 90°）——
+ * 肉眼在那张十几像素的小图上根本看不出来。
+ */
+const poleDotSun = N => {
+  const th = theta(N);
+  const ax = [Math.sin(TILT * D2R), Math.cos(TILT * D2R), 0];   // 北极，空间中固定
+  const toSun = [-Math.cos(th), 0, -Math.sin(th)];              // 轨道在水平面上
+  return ax[0] * toSun[0] + ax[1] * toSun[1] + ax[2] * toSun[2];
+};
+
 export const PHYS = {
+  poleDotSun,
   TILT, LAT, ECC, decl, noonH, dayLen, distOf, sunVec, altOf,
   shadow: N => 1 / Math.tan(noonH(N) * D2R),
   fluxOf: (N, lat = LAT) => Math.sin(noonH(N, lat) * D2R),
@@ -248,80 +264,76 @@ export default {
     person.position.set(-0.7, 0, 2.2);
     scene.add(person);
 
-    /* ---------- 左上角的轨道小图（HUD 性质，永远画在最上层）---------- */
-    const orbit = new THREE.Group();
-    orbit.position.set(0, 8.7, -1);
-
+    /* ---------- 左上角的轨道小图 ---------- */
     /*
-     * 轨道小图贴着画面左边缘放（面朝正南，+x 是东，也就是屏幕左边）。
-     * 位置得按视口现算 —— 写死的话，竖屏会被切掉一半，宽屏又离边太远。
-     * 窄屏还要自动缩一点，否则挤不下。
+     * 这张图必须建成**真 3D**，不能拿二维椭圆凑：
+     * 轨道是水平面上的一个圆，地轴从这个面里竖出来、偏 23.44°。
+     *
+     * 之前偷懒把轨道画成 XY 平面上的扁椭圆、地轴也放在同一个平面里 ——
+     * 几何上根本不可能（地轴躺在了轨道面内）。两至点碰巧看着对，
+     * 但地球走到椭圆上下两端（春分秋分）时，地轴会荒唐地指向太阳：
+     * 实测春分 156°、秋分 30°，而正确答案两个都该是 90°。
      */
-    const ORBIT_W = 23;               // 底衬宽度（本地单位）
-    const _dir = new THREE.Vector3(), _rel = new THREE.Vector3();
-    function placeOrbit() {
-      // 视锥的半宽要按**沿视线的深度**算。用到相机的直线距离会偏大，
-      // 偏离中心越远越离谱，结果就是被推出画面。
-      camera.getWorldDirection(_dir);
-      _rel.subVectors(orbit.position, camera.position);
-      const depth = Math.max(1, _rel.dot(_dir));
-      const halfW = Math.tan(camera.fov / 2 * D2R) * depth * camera.aspect;
-      const sc = Math.min(0.235, (halfW - 0.5) * 1.8 / ORBIT_W);
-      orbit.scale.setScalar(sc);
-      orbit.position.x = halfW - ORBIT_W * sc / 2 - 0.45;
-    }
-    placeOrbit();
-    scene.add(orbit);
-    const hud = m => {m.material.depthTest = false; m.renderOrder = 20; return m;};
+    const orbitHUD = new THREE.Group();     // 不参与倾斜，只负责底衬和贴边
+    orbitHUD.position.set(0, 8.7, -1);
+    scene.add(orbitHUD);
 
-    orbit.add(hud(new THREE.Mesh(
-      new THREE.PlaneGeometry(23, 11),
-      new THREE.MeshBasicMaterial({color: 0x060d1c, transparent: true, opacity: 0.55}))));
-    orbit.add(hud(new THREE.Mesh(
+
+    const orbit = new THREE.Group();
+    // 绕 X 轴压一下，就是「从斜上方看这个水平轨道面」，椭圆是这么来的，不是画扁的
+    orbit.rotation.x = -24.8 * D2R;
+    orbitHUD.add(orbit);
+
+    orbit.add(new THREE.Mesh(
       new THREE.SphereGeometry(1.5, 24, 16),
-      new THREE.MeshBasicMaterial({color: 0xffd34d}))));
+      new THREE.MeshBasicMaterial({color: 0xffd34d})));
 
     const R = 9, ring = [];
     for (let i = 0; i <= 200; i++) {
       const N = i / 200 * 365;
       const r = R * (1 - ECC * Math.cos(2 * Math.PI * (N - 3) / 365));
-      ring.push(new THREE.Vector3(r * Math.cos(theta(N)), r * Math.sin(theta(N)) * 0.42, 0));
+      ring.push(new THREE.Vector3(r * Math.cos(theta(N)), 0, r * Math.sin(theta(N))));
     }
-    const oRing = new THREE.Line(new THREE.BufferGeometry().setFromPoints(ring),
-      new THREE.LineBasicMaterial({color: 0x6f97c4, transparent: true, opacity: 0.9}));
-    oRing.material.depthTest = false; oRing.renderOrder = 20;
-    orbit.add(oRing);
+    orbit.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(ring),
+      new THREE.LineBasicMaterial({color: 0x7ba4d0, transparent: true, opacity: 0.85})));
 
     /*
-     * 小地球分三层，顺序不能乱：
-     *   oEarth  —— 只管在轨道上的位置，不带任何旋转
-     *   oNight  —— 背着太阳的那半边（昼夜分界），朝向由太阳方向决定
-     *   oTilt   —— 地轴倾角，**永远不变**。这是四季的全部原因，一动这一课就废了
-     *
-     * 之前把倾角和自转都塞在同一个 Group 上（rotation.z 和 rotation.y），
-     * Three.js 欧拉角默认 XYZ 序 = 先倾斜再绕世界竖直轴转，
-     * 地轴就绕着竖直方向进动，看上去左右摇摆 —— 正好把要教的东西教反了。
+     * 小地球分三件，各管各的：
+     *   oEarth  在轨道上的位置，不带旋转
+     *   oNight  背着太阳的那半个球壳，绕自己的 Y 轴转到背光方向
+     *   oTilt   地轴倾角，**定死**。这是四季的全部原因，任何地方都不许动它
      */
     const oEarth = new THREE.Group();
-    oEarth.add(hud(new THREE.Mesh(new THREE.SphereGeometry(1.05, 26, 20),
-      new THREE.MeshBasicMaterial({color: 0x5aa3dd}))));
-
-    // 背光的那半边。地球在轨道上走一圈，这半边始终背着中间的太阳
-    const oNight = hud(new THREE.Mesh(
-      new THREE.CircleGeometry(1.07, 28, 0, Math.PI),
-      new THREE.MeshBasicMaterial({color: 0x12233a, transparent: true, opacity: 0.88})));
-    oNight.position.z = 0.02;
-    oNight.renderOrder = 21;
-    oEarth.add(oNight);
+    oEarth.add(new THREE.Mesh(
+      new THREE.SphereGeometry(1.05, 26, 20),
+      new THREE.MeshBasicMaterial({color: 0x5aa3dd})));
 
     const oTilt = new THREE.Group();
-    oTilt.rotation.z = -TILT * D2R;       // 定死。别在任何地方动它
-    const rod = hud(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.2, 8),
+    oTilt.rotation.z = -TILT * D2R;
+    oTilt.add(new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05, 0.05, 3.4, 8),
       new THREE.MeshBasicMaterial({color: 0xff6b5b})));
-    rod.renderOrder = 22;
-    oTilt.add(rod);
     oEarth.add(oTilt);
     orbit.add(oEarth);
+
+    /*
+     * 小图贴着画面左边缘放（面朝正南，+x 是东，也就是屏幕左边）。
+     * 位置得按视口现算 —— 写死的话竖屏会被切掉一半，宽屏又离边太远。
+     * 注意视锥半宽要按**沿视线的深度**算：用相机到物体的直线距离会偏大，
+     * 偏离画面中心越远越离谱，结果是把它推出画面外。
+     */
+    const ORBIT_W = 21;   // 轨道本身的宽度（本地单位），用来算贴边
+    const _dir = new THREE.Vector3(), _rel = new THREE.Vector3();
+    function placeOrbit() {
+      camera.getWorldDirection(_dir);
+      _rel.subVectors(orbitHUD.position, camera.position);
+      const depth = Math.max(1, _rel.dot(_dir));
+      const halfW = Math.tan(camera.fov / 2 * D2R) * depth * camera.aspect;
+      const sc = Math.min(0.235, (halfW - 0.5) * 1.8 / ORBIT_W);
+      orbitHUD.scale.setScalar(sc);
+      orbitHUD.position.x = halfW - ORBIT_W * sc / 2 - 0.45;
+    }
+    placeOrbit();
 
     /* ============ 世界 = f(第几天, 几点) ============ */
     const C = {
@@ -376,10 +388,11 @@ export default {
 
       // 轨道小图里的地球
       const r = R * (1 - ECC * Math.cos(2 * Math.PI * (day - 3) / 365));
-      const px = r * Math.cos(theta(day)), py = r * Math.sin(theta(day)) * 0.42;
-      oEarth.position.set(px, py, 0);
-      // 半圆默认盖住 +y 那半边（中心朝 90°），转到「背离太阳」的方向上
-      oNight.rotation.z = Math.atan2(py, px) - Math.PI / 2;
+      const th = theta(day);
+      oEarth.position.set(r * Math.cos(th), 0, r * Math.sin(th));
+      // 昼夜分界不画在这张图上：它只有十几像素宽，从侧面看过去
+      // 夏天那颗会显得几乎全黑，孩子只会读成「夏天=黑的」。
+      // 昼夜的事交给下面的地面场景（太阳高度、影子、白天多长）去讲。
 
       // 读数
       const si = seasonIdx(day);
